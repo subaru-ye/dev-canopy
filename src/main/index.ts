@@ -137,11 +137,15 @@ function registerIpc(): void {
   ipcMain.handle('commands:stop', async (_event, commandId: number) => {
     const command = database.getCommand(commandId)
     if (!command) throw new Error('命令不存在。')
-    return processManager.stop(command)
+    const project = database.getProject(command.projectId)
+    if (!project) throw new Error('项目不存在。')
+    return processManager.stop(command, project)
   })
   ipcMain.handle('commands:statuses', async (_event, projectId: number) => {
+    const project = database.getProject(projectId)
+    if (!project) throw new Error('项目不存在。')
     const commands = database.listCommands(projectId)
-    return Promise.all(commands.map((command) => processManager.status(command)))
+    return Promise.all(commands.map((command) => processManager.status(command, project)))
   })
   ipcMain.handle('commands:logs', (_event, commandId: number) => processManager.getLogs(commandId))
 

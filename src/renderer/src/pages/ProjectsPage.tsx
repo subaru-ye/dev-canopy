@@ -334,7 +334,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
       {tab === 'commands' ? (
         <div className="project-workspace">
           <div className="workspace-heading">
-            <div><p className="eyebrow">SERVICES</p><h2>命令与进程</h2><p>每 2.5 秒检查一次受管进程和外部检测规则。</p></div>
+            <div><p className="eyebrow">SERVICES</p><h2>命令与进程</h2><p>每 2.5 秒识别 DevDesk 与外部终端启动的项目命令。</p></div>
             <div className="button-group">
               <button className="button ghost" type="button" onClick={() => void runAll('start')} disabled={commands.length === 0}><Play size={15} /> 全部启动</button>
               <button className="button ghost" type="button" onClick={() => void runAll('stop')} disabled={runningCount === 0}><CircleStop size={15} /> 全部停止</button>
@@ -391,7 +391,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
             <label className="field"><span>显示名称</span><input autoFocus value={commandDraft.name} onChange={(event) => setCommandDraft({ ...commandDraft, name: event.target.value })} placeholder="例如：前端" /></label>
             <label className="field"><span>相对工作目录</span><input value={commandDraft.workingDirectory} onChange={(event) => setCommandDraft({ ...commandDraft, workingDirectory: event.target.value })} placeholder="留空使用项目根目录" /></label>
             <label className="field span-2"><span>命令</span><input className="mono-input" value={commandDraft.command} onChange={(event) => setCommandDraft({ ...commandDraft, command: event.target.value })} placeholder="pnpm dev" /></label>
-            <label className="field"><span>运行检测</span><select value={commandDraft.detectionType} onChange={(event) => setCommandDraft({ ...commandDraft, detectionType: event.target.value as DetectionType, detectionValue: '' })}><option value="none">仅检测 DevDesk 启动的进程</option><option value="port">监听端口</option><option value="health">健康检查 URL</option><option value="process">进程关键词</option></select></label>
+            <label className="field"><span>运行检测</span><select value={commandDraft.detectionType} onChange={(event) => setCommandDraft({ ...commandDraft, detectionType: event.target.value as DetectionType, detectionValue: '' })}><option value="none">自动识别项目命令（推荐）</option><option value="port">监听端口</option><option value="health">健康检查 URL</option><option value="process">进程关键词</option></select></label>
             <label className="field"><span>检测值</span><input value={commandDraft.detectionValue} onChange={(event) => setCommandDraft({ ...commandDraft, detectionValue: event.target.value })} disabled={commandDraft.detectionType === 'none'} placeholder={commandDraft.detectionType === 'port' ? '5173' : commandDraft.detectionType === 'health' ? 'http://localhost:3000/health' : commandDraft.detectionType === 'process' ? 'vite' : '无需填写'} /></label>
           </div>
         ) : null}

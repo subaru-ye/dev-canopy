@@ -8,6 +8,7 @@
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && electron-vite build",
     "preview": "electron-vite preview",

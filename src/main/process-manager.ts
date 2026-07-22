@@ -5,6 +5,11 @@ import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { CommandConfig, CommandRuntime, Project } from '../shared/types'
 import type { AppDatabase } from './database'
+import {
+  matchAutomaticProcess,
+  parseWindowsProcessSnapshot,
+  type ProcessSnapshot
+} from './process-detection'
 
 const execFileAsync = promisify(execFile)
 
@@ -18,6 +23,7 @@ export class ProcessManager {
   private readonly managed = new Map<number, ManagedProcess>()
   private readonly logs = new Map<number, string>()
   private readonly lastErrors = new Map<number, string>()
+  private processSnapshotInFlight: Promise<ProcessSnapshot[]> | null = null
 
   constructor(
     private readonly database: AppDatabase,
@@ -25,7 +31,7 @@ export class ProcessManager {
   ) {}
 
   async start(command: CommandConfig, project: Project): Promise<CommandRuntime> {
-    const current = await this.status(command)
+    const current = await this.status(command, project)
     if (current.state === 'running' || current.state === 'starting') return current
 
     const workingDirectory = resolve(project.path, command.workingDirectory || '.')
@@ -80,8 +86,8 @@ export class ProcessManager {
     }
   }
 
-  async stop(command: CommandConfig): Promise<CommandRuntime> {
-    const runtime = await this.status(command)
+  async stop(command: CommandConfig, project: Project): Promise<CommandRuntime> {
+    const runtime = await this.status(command, project)
     if (!runtime.pid) return runtime
     await this.killTree(runtime.pid)
     this.managed.delete(command.id)
@@ -99,7 +105,7 @@ export class ProcessManager {
     return this.logs.get(commandId) ?? ''
   }
 
-  async status(command: CommandConfig): Promise<CommandRuntime> {
+  async status(command: CommandConfig, project: Project): Promise<CommandRuntime> {
     const managed = this.managed.get(command.id)
     if (managed && managed.child.exitCode === null && !managed.child.killed) {
       return {
@@ -112,13 +118,13 @@ export class ProcessManager {
       }
     }
 
-    const detected = await this.detect(command)
+    const detected = await this.detect(command, project)
     if (detected) {
       return {
         commandId: command.id,
         state: 'running',
         pid: detected.pid,
-        startedAt: null,
+        startedAt: detected.startedAt,
         source: 'detected',
         detail: detected.detail
       }
@@ -135,13 +141,17 @@ export class ProcessManager {
     }
   }
 
-  private async detect(command: CommandConfig): Promise<{ pid: number | null; detail: string } | null> {
-    if (!command.detectionValue || command.detectionType === 'none') return null
+  private async detect(
+    command: CommandConfig,
+    project: Project
+  ): Promise<{ pid: number | null; startedAt: string | null; detail: string } | null> {
+    if (command.detectionType === 'none') return this.detectPackageScript(command, project)
+    if (!command.detectionValue) return null
     if (command.detectionType === 'port') {
       const port = Number(command.detectionValue)
       if (!Number.isInteger(port) || port < 1 || port > 65535) return null
       if (!(await this.isPortOpen(port))) return null
-      return { pid: await this.findPortPid(port), detail: `端口 ${port} 正在监听` }
+      return { pid: await this.findPortPid(port), startedAt: null, detail: `端口 ${port} 正在监听` }
     }
     if (command.detectionType === 'health') {
       try {
@@ -149,16 +159,40 @@ export class ProcessManager {
           signal: AbortSignal.timeout(1_500)
         })
         return response.ok
-          ? { pid: null, detail: `健康检查返回 ${response.status}` }
+          ? { pid: null, startedAt: null, detail: `健康检查返回 ${response.status}` }
           : null
       } catch {
         return null
       }
     }
     if (command.detectionType === 'process') {
-      return this.findProcess(command.detectionValue)
+      const process = await this.findProcess(command.detectionValue)
+      return process ? { ...process, startedAt: null } : null
     }
     return null
+  }
+
+  private async detectPackageScript(command: CommandConfig, project: Project) {
+    if (process.platform !== 'win32') return null
+    const processes = await this.getWindowsProcessSnapshot()
+    return matchAutomaticProcess(command.command, project.path, processes)
+  }
+
+  private async getWindowsProcessSnapshot(): Promise<ProcessSnapshot[]> {
+    if (this.processSnapshotInFlight) return this.processSnapshotInFlight
+
+    const script = 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,CreationDate | ConvertTo-Json -Compress'
+    this.processSnapshotInFlight = execFileAsync(
+      'powershell.exe',
+      ['-NoProfile', '-Command', script],
+      { timeout: 4_000, maxBuffer: 5 * 1024 * 1024 }
+    )
+      .then(({ stdout }) => parseWindowsProcessSnapshot(stdout))
+      .catch(() => [])
+      .finally(() => {
+        this.processSnapshotInFlight = null
+      })
+    return this.processSnapshotInFlight
   }
 
   private isPortOpen(port: number): Promise<boolean> {
