@@ -84,7 +84,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
   useEffect(() => {
     if (!selectedProject) return
     void loadCommands()
-    const interval = window.setInterval(() => void loadCommands(), 2_500)
+    const interval = window.setInterval(() => void loadCommands(), 5_000)
     return () => window.clearInterval(interval)
   }, [selectedProject, loadCommands])
 
@@ -334,7 +334,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
       {tab === 'commands' ? (
         <div className="project-workspace">
           <div className="workspace-heading">
-            <div><p className="eyebrow">SERVICES</p><h2>命令与进程</h2><p>每 2.5 秒识别 DevDesk 与外部终端启动的项目命令。</p></div>
+            <div><p className="eyebrow">SERVICES</p><h2>命令与进程</h2><p>每 5 秒识别 DevDesk 与外部终端启动的项目命令。</p></div>
             <div className="button-group">
               <button className="button ghost" type="button" onClick={() => void runAll('start')} disabled={commands.length === 0}><Play size={15} /> 全部启动</button>
               <button className="button ghost" type="button" onClick={() => void runAll('stop')} disabled={runningCount === 0}><CircleStop size={15} /> 全部停止</button>
