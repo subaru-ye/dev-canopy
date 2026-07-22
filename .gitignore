@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+devdesk*-smoke.png
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+.idea/
+.vscode/
