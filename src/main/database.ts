@@ -13,6 +13,16 @@ import type {
   TaskNote
 } from '../shared/types'
 
+// 用 SQLite 在线 backup 拷贝数据库(连同 WAL 中未落盘的写入),供旧路径迁移使用。
+export async function copyDatabase(sourcePath: string, destinationPath: string): Promise<void> {
+  const source = new Database(sourcePath, { readonly: true, fileMustExist: true })
+  try {
+    await source.backup(destinationPath)
+  } finally {
+    source.close()
+  }
+}
+
 export class AppDatabase {
   private readonly db: Database.Database
 
@@ -27,8 +37,24 @@ export class AppDatabase {
     this.db.close()
   }
 
+  // 版本化迁移:PRAGMA user_version 记录已执行到第几步,新库与老库都从自己的版本继续。
+  // 迁移 0 是幂等基线(全部 IF NOT EXISTS);之后的结构变更(如 ALTER TABLE 加列)必须
+  // 作为新数组项追加,禁止改动已发布的条目。
   private migrate(): void {
-    this.db.exec(`
+    const migrations = [this.baselineSchema()]
+    const applyMigrations = this.db.transaction(() => {
+      let version = this.db.pragma('user_version', { simple: true }) as number
+      while (version < migrations.length) {
+        this.db.exec(migrations[version])
+        version += 1
+        this.db.pragma(`user_version = ${version}`)
+      }
+    })
+    applyMigrations()
+  }
+
+  private baselineSchema(): string {
+    return `
       CREATE TABLE IF NOT EXISTS projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -110,7 +136,7 @@ export class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes(task_id);
       CREATE INDEX IF NOT EXISTS idx_task_checklist_task ON task_checklist(task_id);
       CREATE INDEX IF NOT EXISTS idx_prompts_updated ON prompts(updated_at);
-    `)
+    `
   }
 
   listProjects(): Project[] {
@@ -383,11 +409,11 @@ export class AppDatabase {
     if (!current) throw new Error('任务不存在。')
     const next = {
       projectId: patch.projectId === undefined ? current.projectId : patch.projectId,
-      title: patch.title ?? current.title,
-      description: patch.description ?? current.description,
+      title: (patch.title ?? current.title).trim(),
+      description: (patch.description ?? current.description).trim(),
       status: patch.status ?? current.status,
       priority: patch.priority ?? current.priority,
-      completionNote: patch.completionNote ?? current.completionNote
+      completionNote: (patch.completionNote ?? current.completionNote).trim()
     }
     const completedAt = next.status === 'done'
       ? (current.completedAt ?? new Date().toISOString())

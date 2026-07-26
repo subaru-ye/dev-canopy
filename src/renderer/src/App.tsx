@@ -34,6 +34,11 @@ export function App() {
 
   useEffect(() => { void reloadProjects() }, [reloadProjects])
 
+  // 回写 hash,刷新/崩溃重载后停留在当前页面(initialRoute 会读取它)。
+  useEffect(() => {
+    window.location.hash = route
+  }, [route])
+
   return (
     <div className="app-shell">
       <aside className="sidebar">

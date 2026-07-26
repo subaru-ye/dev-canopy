@@ -62,6 +62,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
   const [importName, setImportName] = useState('')
   const [importBusy, setImportBusy] = useState(false)
   const [commandDialog, setCommandDialog] = useState(false)
+  const [commandError, setCommandError] = useState('')
   const [commandDraft, setCommandDraft] = useState<CommandDraft | null>(null)
   const [editingCommand, setEditingCommand] = useState<CommandConfig | null>(null)
   const [commands, setCommands] = useState<CommandConfig[]>([])
@@ -148,7 +149,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
   const createCommand = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     if (!commandDraft) return
-    setError('')
+    setCommandError('')
     try {
       if (editingCommand) await window.devcanopy.commands.update(editingCommand.id, commandDraft)
       else await window.devcanopy.commands.create(commandDraft)
@@ -157,7 +158,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
       await loadCommands()
       await reloadProjects()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
+      setCommandError(reason instanceof Error ? reason.message : String(reason))
     }
   }
 
@@ -212,6 +213,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
       detectionType: command.detectionType,
       detectionValue: command.detectionValue
     })
+    setCommandError('')
     setCommandDialog(true)
   }
 
@@ -357,12 +359,12 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
             <div className="button-group">
               <button className="button ghost" type="button" onClick={() => void runAll('start')} disabled={commands.length === 0}><Play size={15} /> 全部启动</button>
               <button className="button ghost" type="button" onClick={() => void runAll('stop')} disabled={runningCount === 0}><CircleStop size={15} /> 全部停止</button>
-              <button className="button primary" type="button" onClick={() => { setEditingCommand(null); setCommandDraft(emptyCommand(selectedProject.id)); setCommandDialog(true) }}><Plus size={16} /> 添加命令</button>
+              <button className="button primary" type="button" onClick={() => { setEditingCommand(null); setCommandDraft(emptyCommand(selectedProject.id)); setCommandError(''); setCommandDialog(true) }}><Plus size={16} /> 添加命令</button>
             </div>
           </div>
 
           {commands.length === 0 ? (
-            <div className="empty-state"><SquareTerminal size={31} /><h2>还没有命令</h2><p>添加前端、后端或桌面端的长期运行命令。</p><button className="button secondary" type="button" onClick={() => { setEditingCommand(null); setCommandDraft(emptyCommand(selectedProject.id)); setCommandDialog(true) }}>添加第一条命令</button></div>
+            <div className="empty-state"><SquareTerminal size={31} /><h2>还没有命令</h2><p>添加前端、后端或桌面端的长期运行命令。</p><button className="button secondary" type="button" onClick={() => { setEditingCommand(null); setCommandDraft(emptyCommand(selectedProject.id)); setCommandError(''); setCommandDialog(true) }}>添加第一条命令</button></div>
           ) : (
             <div className="command-table">
               <div className="command-table-head"><span>命令</span><span>状态</span><span>PID / 检测</span><span>持续时间</span><span>操作</span></div>
@@ -412,6 +414,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
             <label className="field span-2"><span>命令</span><input className="mono-input" value={commandDraft.command} onChange={(event) => setCommandDraft({ ...commandDraft, command: event.target.value })} placeholder="pnpm dev" /></label>
             <label className="field"><span>运行检测</span><select value={commandDraft.detectionType} onChange={(event) => setCommandDraft({ ...commandDraft, detectionType: event.target.value as DetectionType, detectionValue: '' })}><option value="none">自动识别项目命令（推荐）</option><option value="port">监听端口</option><option value="health">健康检查 URL</option><option value="process">进程关键词</option></select></label>
             <label className="field"><span>检测值</span><input value={commandDraft.detectionValue} onChange={(event) => setCommandDraft({ ...commandDraft, detectionValue: event.target.value })} disabled={commandDraft.detectionType === 'none'} placeholder={commandDraft.detectionType === 'port' ? '5173' : commandDraft.detectionType === 'health' ? 'http://localhost:3000/health' : commandDraft.detectionType === 'process' ? 'vite' : '无需填写'} /></label>
+            {commandError ? <p className="form-error span-2" role="alert">{commandError}</p> : null}
           </div>
         ) : null}
       </Modal>

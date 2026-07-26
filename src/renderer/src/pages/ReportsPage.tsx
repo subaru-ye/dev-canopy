@@ -17,6 +17,7 @@ export function ReportsPage() {
   const [completedTasks, setCompletedTasks] = useState<Task[]>([])
   const [reportDates, setReportDates] = useState<string[]>([])
   const [saveState, setSaveState] = useState<keyof typeof saveStateLabels>('idle')
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const draftRef = useRef('')
   const savedRef = useRef('')
@@ -27,7 +28,7 @@ export function ReportsPage() {
     setReportDates(await window.devcanopy.reports.dates())
   }, [])
 
-  const persist = useCallback(async (targetDate: string): Promise<void> => {
+  const persist = useCallback(async (targetDate: string): Promise<boolean> => {
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current)
       timerRef.current = null
@@ -35,7 +36,7 @@ export function ReportsPage() {
     const content = draftRef.current
     if (content === savedRef.current) {
       setSaveState((current) => (current === 'saving' ? 'saved' : current))
-      return
+      return true
     }
     setSaveState('saving')
     try {
@@ -44,15 +45,18 @@ export function ReportsPage() {
       setSaveState('saved')
       setError('')
       void refreshDates()
+      return true
     } catch (reason) {
       setSaveState('error')
       setError(reason instanceof Error ? reason.message : String(reason))
+      return false
     }
   }, [refreshDates])
 
   useEffect(() => {
     let cancelled = false
     dateRef.current = date
+    setLoading(true)
     const range = localDayUtcRange(date)
     Promise.all([
       window.devcanopy.reports.get(date),
@@ -66,8 +70,11 @@ export function ReportsPage() {
         savedRef.current = content
         setSaveState('idle')
         setCompletedTasks(tasks)
+        setLoading(false)
       })
       .catch((reason) => {
+        // 加载失败时保持禁用:此刻 textarea 里还是上一个日期的内容,
+        // 放开编辑会把旧日正文经自动保存写进当前日期。
         if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason))
       })
     return () => { cancelled = true }
@@ -95,7 +102,10 @@ export function ReportsPage() {
 
   const goToDate = useCallback(async (next: string): Promise<void> => {
     if (!next || next === date || next > today) return
-    await persist(date)
+    // 旧日期保存失败就留在原地,否则未保存内容会被新日期的加载覆盖而永久丢失。
+    if (!(await persist(date))) return
+    // 先禁用编辑再切日期,堵住"新内容加载完成前编辑旧草稿被写进新日期"的窗口。
+    setLoading(true)
     setDate(next)
   }, [date, today, persist])
 
@@ -161,9 +171,10 @@ export function ReportsPage() {
             <textarea
               className="report-textarea"
               value={draft}
+              disabled={loading}
               onChange={(event) => onDraftChange(event.target.value)}
               onBlur={() => void persist(date)}
-              placeholder="今天做了什么、卡在哪里、明天计划…"
+              placeholder={loading ? '正在读取…' : '今天做了什么、卡在哪里、明天计划…'}
               aria-label="日报正文"
             />
           </section>

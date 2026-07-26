@@ -1,10 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync, promises as fs } from 'node:fs'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
-import { AppDatabase } from './database'
+import { AppDatabase, copyDatabase } from './database'
 import { ProcessManager } from './process-manager'
 import { scanSkills } from './skills'
-import type { CommandDraft, ProjectDraft, PromptDraft, PromptImportResult, TaskDraft } from '../shared/types'
+import type { CommandDraft, ProjectDraft, PromptDraft, PromptImportResult, TaskDraft, TaskPriority, TaskStatus } from '../shared/types'
 
 let database: AppDatabase
 let processManager: ProcessManager
@@ -31,17 +31,22 @@ function createWindow(): void {
   })
 
   mainWindow.once('ready-to-show', () => mainWindow?.show())
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedUrl) => {
     console.error(`[renderer:load] ${errorCode} ${errorDescription} ${validatedUrl}`)
   })
-  if (process.env.DEVCANOPY_CAPTURE_PATH) {
+  // 截图冒烟脚手架只在未打包的开发/测试环境生效,不进生产包。
+  const captureEnabled = !app.isPackaged && !!process.env.DEVCANOPY_CAPTURE_PATH
+  if (captureEnabled) {
     mainWindow.webContents.on('console-message', (_event, level, message) => {
       if (level >= 2) console.error(`[renderer:${level}] ${message}`)
     })
   }
   mainWindow.webContents.once('did-finish-load', () => {
     const capturePath = process.env.DEVCANOPY_CAPTURE_PATH
-    if (!capturePath) return
+    if (!captureEnabled || !capturePath) return
     setTimeout(async () => {
       if (!mainWindow || mainWindow.isDestroyed()) return
       const clickSelector = process.env.DEVCANOPY_CAPTURE_CLICK
@@ -57,11 +62,12 @@ function createWindow(): void {
     }, 1_500)
   })
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    // 只放行 http/https,防止 file:// 等协议经系统默认处理器执行本地程序。
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
 
-  const captureRoute = process.env.DEVCANOPY_CAPTURE_ROUTE
+  const captureRoute = captureEnabled ? process.env.DEVCANOPY_CAPTURE_ROUTE : undefined
   if (process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}${captureRoute ? `#${captureRoute}` : ''}`)
   } else {
@@ -76,12 +82,28 @@ function detectPackageManager(projectPath: string): 'npm' | 'pnpm' | 'yarn' | 'b
   return 'npm'
 }
 
-function resolveDatabasePath(): string {
+async function resolveDatabasePath(): Promise<string> {
   const currentPath = join(app.getPath('userData'), 'devcanopy.db')
   if (existsSync(currentPath)) return currentPath
 
   const legacyPath = join(app.getPath('appData'), 'DevDesk', 'devdesk.db')
-  return existsSync(legacyPath) ? legacyPath : currentPath
+  if (!existsSync(legacyPath)) return currentPath
+
+  // 一次性把旧 DevDesk 库搬到新目录:继续写旧目录的话,用户清理"已弃用"的
+  // DevDesk 文件夹时会丢掉全部数据。先拷到临时文件、成功后再改名,保证
+  // 中途断电/被杀不会留下半个 devcanopy.db 被当成完整库打开;失败则回落旧路径。
+  const migratingPath = `${currentPath}.migrating`
+  try {
+    await fs.mkdir(app.getPath('userData'), { recursive: true })
+    await fs.rm(migratingPath, { force: true })
+    await copyDatabase(legacyPath, migratingPath)
+    await fs.rename(migratingPath, currentPath)
+    return currentPath
+  } catch (error) {
+    await fs.rm(migratingPath, { force: true }).catch(() => undefined)
+    console.error('[database] 迁移旧数据库失败，继续使用旧路径。', error)
+    return legacyPath
+  }
 }
 
 async function inspectProjectFolder(projectPath: string) {
@@ -109,6 +131,8 @@ async function inspectProjectFolder(projectPath: string) {
 
 const REPORT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const PROMPT_IMPORT_MAX_BYTES = 2 * 1024 * 1024
+const TASK_STATUSES: TaskStatus[] = ['todo', 'doing', 'done']
+const TASK_PRIORITIES: TaskPriority[] = ['low', 'normal', 'high']
 
 function todayLocalDate(): string {
   const now = new Date()
@@ -167,7 +191,11 @@ function registerIpc(): void {
     if (!existsSync(draft.path)) throw new Error('项目目录不存在。')
     return database.createProject(draft)
   })
-  ipcMain.handle('projects:remove', (_event, projectId: number) => database.removeProject(projectId))
+  ipcMain.handle('projects:remove', async (_event, projectId: number) => {
+    const commands = database.listCommands(projectId)
+    await Promise.allSettled(commands.map((command) => processManager.stopManaged(command.id)))
+    database.removeProject(projectId)
+  })
   ipcMain.handle('projects:reveal', async (_event, projectPath: string) => {
     const error = await shell.openPath(projectPath)
     if (error) throw new Error(error)
@@ -185,7 +213,10 @@ function registerIpc(): void {
     if (!draft.name.trim() || !draft.command.trim()) throw new Error('名称和命令不能为空。')
     return database.updateCommand(commandId, draft)
   })
-  ipcMain.handle('commands:remove', (_event, commandId: number) => database.removeCommand(commandId))
+  ipcMain.handle('commands:remove', async (_event, commandId: number) => {
+    await processManager.stopManaged(commandId)
+    database.removeCommand(commandId)
+  })
   ipcMain.handle('commands:start', async (_event, commandId: number) => {
     const command = database.getCommand(commandId)
     if (!command) throw new Error('命令不存在。')
@@ -213,7 +244,12 @@ function registerIpc(): void {
     if (!draft.title.trim()) throw new Error('任务标题不能为空。')
     return database.createTask(draft)
   })
-  ipcMain.handle('tasks:update', (_event, taskId: number, draft: Partial<TaskDraft>) => database.updateTask(taskId, draft))
+  ipcMain.handle('tasks:update', (_event, taskId: number, draft: Partial<TaskDraft>) => {
+    if (draft.title !== undefined && !draft.title.trim()) throw new Error('任务标题不能为空。')
+    if (draft.status !== undefined && !TASK_STATUSES.includes(draft.status)) throw new Error('任务状态无效。')
+    if (draft.priority !== undefined && !TASK_PRIORITIES.includes(draft.priority)) throw new Error('任务优先级无效。')
+    return database.updateTask(taskId, draft)
+  })
   ipcMain.handle('tasks:remove', (_event, taskId: number) => database.removeTask(taskId))
   ipcMain.handle('tasks:notes:list', (_event, taskId: number) => database.listTaskNotes(taskId))
   ipcMain.handle('tasks:notes:create', (_event, taskId: number, content: string) => {
@@ -277,11 +313,13 @@ function registerIpc(): void {
   }))
 }
 
-app.whenReady().then(() => {
-  databasePath = resolveDatabasePath()
+app.whenReady().then(async () => {
+  databasePath = await resolveDatabasePath()
   database = new AppDatabase(databasePath)
   processManager = new ProcessManager(database, (commandId, chunk) => {
-    mainWindow?.webContents.send('commands:log', { commandId, chunk })
+    // 可选链防不住已销毁的窗口:destroyed 后访问 webContents 会抛异常并打崩主进程。
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send('commands:log', { commandId, chunk })
   })
   registerIpc()
   createWindow()
@@ -295,6 +333,19 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
-  database?.close()
+// 退出前先结算并终止托管进程(否则 dev server 变孤儿继续占端口),再关数据库。
+let cleanupDone = false
+app.on('before-quit', (event) => {
+  if (cleanupDone) return
+  cleanupDone = true
+  event.preventDefault()
+  void (async () => {
+    try {
+      await processManager?.disposeAll()
+    } catch {
+      // 尽力清理,失败也要继续退出。
+    }
+    database?.close()
+    app.quit()
+  })()
 })
