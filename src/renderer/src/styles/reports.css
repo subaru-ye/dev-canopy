@@ -62,6 +62,27 @@
   font-weight: 700;
 }
 
+.report-head-action {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  margin-left: auto;
+  padding: 3px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.report-head-action:hover:not(:disabled) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
 .report-panel-head em {
   padding: 1px 7px;
   font-size: 11px;

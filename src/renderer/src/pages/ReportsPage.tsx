@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CalendarDays, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarDays, Check, ChevronLeft, ChevronRight, ListPlus, ScrollText } from 'lucide-react'
 import type { Task } from '../../../shared/types'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { localDayUtcRange, reportDayLabel, shiftDate, timeLabel, todayLocal } from '../utils/dates'
@@ -10,6 +10,26 @@ const saveStateLabels = {
   saved: '已保存',
   error: '保存失败'
 } as const
+
+// 先做模块常量,将来迁 settings 表做成可配置模板。
+const REPORT_TEMPLATE = `## 今日进展
+-
+
+## 问题与阻塞
+-
+
+## 明日计划
+-
+`
+
+function completedTaskMarkdown(task: Task): string {
+  const meta = [task.projectName ?? '个人待办', task.completedAt ? `${timeLabel(task.completedAt)} 完成` : '']
+    .filter(Boolean)
+    .join(' · ')
+  const lines = [`- [x] ${task.title}（${meta}）`]
+  if (task.completionNote) lines.push(`  - ${task.completionNote}`)
+  return lines.join('\n')
+}
 
 export function ReportsPage() {
   const [date, setDate] = useState<string>(todayLocal())
@@ -119,6 +139,14 @@ export function ReportsPage() {
     timerRef.current = window.setTimeout(() => { void persist(target) }, 800)
   }
 
+  // 把完成任务清单转 Markdown 追加进正文,走 onDraftChange 触发既有自动保存。
+  const insertCompletedTasks = (): void => {
+    if (loading || completedTasks.length === 0) return
+    const block = completedTasks.map(completedTaskMarkdown).join('\n')
+    const base = draftRef.current
+    onDraftChange(base.trim() === '' ? `${block}\n` : `${base.replace(/\s*$/, '')}\n\n${block}\n`)
+  }
+
   return (
     <section className="page route-enter">
       <header className="page-header">
@@ -163,7 +191,18 @@ export function ReportsPage() {
       <div className="report-layout">
         <div className="report-main">
           <section className="panel report-editor">
-            <header className="report-panel-head">正文</header>
+            <header className="report-panel-head">
+              正文
+              {!loading && draft.trim() === '' ? (
+                <button
+                  type="button"
+                  className="report-head-action"
+                  onClick={() => onDraftChange(REPORT_TEMPLATE)}
+                >
+                  <ScrollText size={13} />使用模板
+                </button>
+              ) : null}
+            </header>
             <textarea
               className="report-textarea"
               value={draft}
@@ -175,7 +214,19 @@ export function ReportsPage() {
             />
           </section>
           <section className="panel report-done">
-            <header className="report-panel-head">当日完成任务 <em>{completedTasks.length}</em></header>
+            <header className="report-panel-head">
+              当日完成任务 <em>{completedTasks.length}</em>
+              {completedTasks.length > 0 ? (
+                <button
+                  type="button"
+                  className="report-head-action"
+                  disabled={loading}
+                  onClick={insertCompletedTasks}
+                >
+                  <ListPlus size={13} />插入到正文
+                </button>
+              ) : null}
+            </header>
             {completedTasks.length === 0 ? (
               <p className="report-done-empty">这一天没有完成的任务。</p>
             ) : completedTasks.map((task) => (

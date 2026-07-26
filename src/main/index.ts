@@ -57,7 +57,8 @@ function createWindow(): void {
         await mainWindow.webContents
           .executeJavaScript(`document.querySelector(${JSON.stringify(clickSelector)})?.click()`)
           .catch(() => undefined)
-        await new Promise((resolve) => setTimeout(resolve, 600))
+        // 等过渲染层 800ms 的自动保存防抖,让截图能拍到「已保存」等落库后的状态。
+        await new Promise((resolve) => setTimeout(resolve, 1_500))
       }
       const image = await mainWindow.webContents.capturePage()
       await fs.writeFile(capturePath, image.toPNG())
