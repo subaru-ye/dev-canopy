@@ -1,17 +1,9 @@
-import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import net from 'node:net'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { resolve } from 'node:path'
-import { promisify } from 'node:util'
 import type { CommandConfig, CommandRuntime, Project } from '../shared/types'
 import type { AppDatabase } from './database'
-import {
-  matchAutomaticProcess,
-  parseWindowsProcessSnapshot,
-  type ProcessSnapshot
-} from './process-detection'
-
-const execFileAsync = promisify(execFile)
+import { matchAutomaticProcess, type ProcessSnapshot } from './process-detection'
+import { systemProbe, type SystemProbe } from './system-probe'
 
 interface ManagedProcess {
   child: ChildProcessWithoutNullStreams
@@ -32,7 +24,8 @@ export class ProcessManager {
 
   constructor(
     private readonly database: AppDatabase,
-    private readonly emitLog: (commandId: number, chunk: string) => void
+    private readonly emitLog: (commandId: number, chunk: string) => void,
+    private readonly probe: SystemProbe = systemProbe
   ) {}
 
   // status 检测最长可达数秒,同一命令的并发 start 共享同一次启动,避免双进程失管。
@@ -53,23 +46,13 @@ export class ProcessManager {
     if (this.disposed) throw new Error('应用正在退出，无法启动命令。')
 
     const workingDirectory = resolve(project.path, command.workingDirectory || '.')
-    if (!existsSync(workingDirectory)) {
+    if (!this.probe.workingDirectoryExists(workingDirectory)) {
       throw new Error(`工作目录不存在：${workingDirectory}`)
     }
 
     this.lastErrors.delete(command.id)
     this.logs.set(command.id, '')
-    const child = process.platform === 'win32'
-      ? spawn('cmd.exe', ['/d', '/s', '/c', command.command], {
-          cwd: workingDirectory,
-          windowsHide: true,
-          env: { ...process.env, FORCE_COLOR: '1' }
-        })
-      : spawn(command.shell || process.env.SHELL || '/bin/sh', ['-lc', command.command], {
-          cwd: workingDirectory,
-          detached: true,
-          env: { ...process.env, FORCE_COLOR: '1' }
-        })
+    const child = this.probe.spawnCommand(command.command, command.shell, workingDirectory)
 
     const startedAt = new Date().toISOString()
     const runId = this.database.createProcessRun(command.id, child.pid ?? 0, startedAt)
@@ -219,47 +202,35 @@ export class ProcessManager {
     if (command.detectionType === 'port') {
       const port = Number(command.detectionValue)
       if (!Number.isInteger(port) || port < 1 || port > 65535) return null
-      if (!(await this.isPortOpen(port))) return null
-      return { pid: await this.findPortPid(port), startedAt: null, detail: `端口 ${port} 正在监听` }
+      if (!(await this.probe.isPortOpen(port))) return null
+      return { pid: await this.probe.findPortPid(port), startedAt: null, detail: `端口 ${port} 正在监听` }
     }
     if (command.detectionType === 'health') {
-      try {
-        const response = await fetch(command.detectionValue, {
-          signal: AbortSignal.timeout(1_500)
-        })
-        return response.ok
-          ? { pid: null, startedAt: null, detail: `健康检查返回 ${response.status}` }
-          : null
-      } catch {
-        return null
-      }
+      const status = await this.probe.healthStatus(command.detectionValue)
+      return status === null
+        ? null
+        : { pid: null, startedAt: null, detail: `健康检查返回 ${status}` }
     }
     if (command.detectionType === 'process') {
-      const process = await this.findProcess(command.detectionValue)
-      return process ? { ...process, startedAt: null } : null
+      const found = await this.probe.findProcess(command.detectionValue)
+      return found ? { ...found, startedAt: null } : null
     }
     return null
   }
 
   private async detectPackageScript(command: CommandConfig, project: Project) {
-    if (process.platform !== 'win32') return null
-    const processes = await this.getWindowsProcessSnapshot()
+    if (this.probe.platform !== 'win32') return null
+    const processes = await this.getProcessSnapshot()
     return matchAutomaticProcess(command.command, project.path, processes)
   }
 
-  private async getWindowsProcessSnapshot(): Promise<ProcessSnapshot[]> {
+  private async getProcessSnapshot(): Promise<ProcessSnapshot[]> {
     const cached = this.processSnapshotCache
     if (cached && Date.now() - cached.takenAt < ProcessManager.SNAPSHOT_TTL_MS) return cached.processes
     if (this.processSnapshotInFlight) return this.processSnapshotInFlight
 
-    const script = 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,CreationDate | ConvertTo-Json -Compress'
-    this.processSnapshotInFlight = execFileAsync(
-      'powershell.exe',
-      ['-NoProfile', '-Command', script],
-      { timeout: 4_000, maxBuffer: 5 * 1024 * 1024 }
-    )
-      .then(({ stdout }) => {
-        const processes = parseWindowsProcessSnapshot(stdout)
+    this.processSnapshotInFlight = this.probe.processSnapshot()
+      .then((processes) => {
         this.processSnapshotCache = { takenAt: Date.now(), processes }
         return processes
       })
@@ -270,68 +241,9 @@ export class ProcessManager {
     return this.processSnapshotInFlight
   }
 
-  private isPortOpen(port: number): Promise<boolean> {
-    return new Promise((resolvePromise) => {
-      const socket = net.createConnection({ host: '127.0.0.1', port })
-      const finish = (value: boolean): void => {
-        socket.removeAllListeners()
-        socket.destroy()
-        resolvePromise(value)
-      }
-      socket.setTimeout(500)
-      socket.once('connect', () => finish(true))
-      socket.once('timeout', () => finish(false))
-      socket.once('error', () => finish(false))
-    })
-  }
-
-  private async findPortPid(port: number): Promise<number | null> {
-    if (process.platform !== 'win32') return null
-    try {
-      const script = `(Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess)`
-      const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 2_000 })
-      const pid = Number(stdout.trim())
-      return Number.isInteger(pid) && pid > 0 ? pid : null
-    } catch {
-      return null
-    }
-  }
-
-  private async findProcess(keyword: string): Promise<{ pid: number; detail: string } | null> {
-    if (process.platform === 'win32') {
-      const safeKeyword = keyword.replaceAll("'", "''")
-      const script = `$k='${safeKeyword}'; Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf($k, [StringComparison]::OrdinalIgnoreCase) -ge 0 } | Select-Object -First 1 ProcessId,Name,CommandLine | ConvertTo-Json -Compress`
-      try {
-        const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', script], { timeout: 3_000 })
-        if (!stdout.trim()) return null
-        const match = JSON.parse(stdout) as { ProcessId: number; Name: string }
-        return { pid: match.ProcessId, detail: `检测到 ${match.Name}` }
-      } catch {
-        return null
-      }
-    }
-    try {
-      const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,command='], { timeout: 2_000 })
-      const line = stdout.split('\n').find((entry) => entry.toLowerCase().includes(keyword.toLowerCase()))
-      if (!line) return null
-      const pid = Number(line.trim().split(/\s+/, 1)[0])
-      return Number.isInteger(pid) ? { pid, detail: `检测到进程 ${pid}` } : null
-    } catch {
-      return null
-    }
-  }
-
   private async killTree(pid: number): Promise<void> {
     try {
-      if (process.platform === 'win32') {
-        await execFileAsync('taskkill.exe', ['/pid', String(pid), '/T', '/F'], { timeout: 8_000 })
-        return
-      }
-      try {
-        process.kill(-pid, 'SIGTERM')
-      } catch {
-        process.kill(pid, 'SIGTERM')
-      }
+      await this.probe.killTree(pid)
     } finally {
       // 进程树已变化,丢弃快照缓存,避免刚停止的命令在 TTL 内仍被识别为运行中。
       this.processSnapshotCache = null
