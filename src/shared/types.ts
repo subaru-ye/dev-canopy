@@ -192,6 +192,7 @@ export interface DevCanopyApi {
     get: (reportDate: string) => Promise<DailyReport | null>
     save: (reportDate: string, content: string) => Promise<DailyReport | null>
     dates: () => Promise<string[]>
+    range: (startDate: string, endDate: string) => Promise<DailyReport[]>
   }
   prompts: {
     list: () => Promise<PromptDoc[]>

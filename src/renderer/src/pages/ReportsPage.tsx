@@ -2,7 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CalendarDays, Check, ChevronLeft, ChevronRight, ListPlus, ScrollText } from 'lucide-react'
 import type { Task } from '../../../shared/types'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { ReportsRangeView, type RangeView } from './ReportsRangeView'
 import { localDayUtcRange, reportDayLabel, shiftDate, timeLabel, todayLocal } from '../utils/dates'
+
+const VIEW_OPTIONS = [
+  { id: 'day' as const, label: '日' },
+  { id: 'week' as const, label: '周' },
+  { id: 'month' as const, label: '月' }
+]
+
+type ReportView = 'day' | RangeView
 
 const saveStateLabels = {
   idle: '',
@@ -32,6 +41,7 @@ function completedTaskMarkdown(task: Task): string {
 }
 
 export function ReportsPage() {
+  const [view, setView] = useState<ReportView>('day')
   const [date, setDate] = useState<string>(todayLocal())
   const [today, setToday] = useState<string>(todayLocal())
   const [draft, setDraft] = useState('')
@@ -130,6 +140,13 @@ export function ReportsPage() {
     setDate(next)
   }, [date, today, persist])
 
+  // 离开日视图前先落库,防止未保存草稿在聚合视图停留期间丢失。
+  const switchView = useCallback(async (next: ReportView): Promise<void> => {
+    if (next === view) return
+    if (view === 'day' && !(await persist(date))) return
+    setView(next)
+  }, [view, date, persist])
+
   const onDraftChange = (value: string): void => {
     setDraft(value)
     draftRef.current = value
@@ -153,10 +170,33 @@ export function ReportsPage() {
         <div>
           <p className="eyebrow">DAILY REPORT</p>
           <h1>日报</h1>
-          <p>{reportDayLabel(date)} · 手写正文与当日完成任务</p>
+          <p>
+            {view === 'day'
+              ? `${reportDayLabel(date)} · 手写正文与当日完成任务`
+              : view === 'week'
+                ? '按周汇总完成任务与日报'
+                : '按月汇总完成任务与日报'}
+          </p>
+        </div>
+        <div className="theme-switch report-view-switch" role="group" aria-label="视图切换">
+          {VIEW_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={view === option.id ? 'active' : ''}
+              aria-pressed={view === option.id}
+              onClick={() => void switchView(option.id)}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       </header>
 
+      {view !== 'day' ? (
+        <ReportsRangeView view={view} anchor={date} today={today} onAnchorChange={setDate} />
+      ) : (
+      <>
       <div className="toolbar report-toolbar">
         <button className="button ghost" type="button" aria-label="前一天" onClick={() => void goToDate(shiftDate(date, -1))}>
           <ChevronLeft size={16} />
@@ -261,6 +301,8 @@ export function ReportsPage() {
           ))}
         </aside>
       </div>
+      </>
+      )}
     </section>
   )
 }

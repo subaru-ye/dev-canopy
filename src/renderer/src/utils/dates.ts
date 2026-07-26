@@ -51,6 +51,36 @@ export function localDayUtcRange(dateStr: string): { startIso: string; endIso: s
   }
 }
 
+// 所在周的 [周一, 周日] 本地日期闭区间;getDay() 周日返回 0,需折算成"距周一的天数"。
+export function weekRangeOf(dateStr: string): { start: string; end: string } {
+  const date = parseLocalDate(dateStr)
+  const sinceMonday = (date.getDay() + 6) % 7
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - sinceMonday)
+  const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6)
+  return { start: formatLocalDate(monday), end: formatLocalDate(sunday) }
+}
+
+// 所在月的 [1 号, 月末] 本地日期闭区间;new Date(y, m, 0) 即上一个月最后一天。
+export function monthRangeOf(dateStr: string): { start: string; end: string } {
+  const [year, month] = dateStr.split('-').map(Number)
+  return {
+    start: formatLocalDate(new Date(year, month - 1, 1)),
+    end: formatLocalDate(new Date(year, month, 0))
+  }
+}
+
+// 本地日期闭区间 [startDate, endDate] 对应的 UTC ISO 半开区间。
+export function localRangeUtc(startDate: string, endDate: string): { startIso: string; endIso: string } {
+  return {
+    startIso: parseLocalDate(startDate).toISOString(),
+    endIso: parseLocalDate(shiftDate(endDate, 1)).toISOString()
+  }
+}
+
+export function weekdayLabel(dateStr: string): string {
+  return parseLocalDate(dateStr).toLocaleDateString('zh-CN', { weekday: 'short' })
+}
+
 export function reportDayLabel(dateStr: string): string {
   const date = parseLocalDate(dateStr)
   const today = new Date()

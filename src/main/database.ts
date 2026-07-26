@@ -67,6 +67,10 @@ const TASK_SELECT = `
   FROM tasks t
   LEFT JOIN projects p ON p.id = t.project_id`
 
+const REPORT_SELECT = `
+  SELECT id, report_date AS reportDate, content, created_at AS createdAt, updated_at AS updatedAt
+  FROM daily_reports`
+
 const PROMPT_SELECT = `
   SELECT id, title, content, created_at AS createdAt, updated_at AS updatedAt
   FROM prompts`
@@ -531,9 +535,18 @@ export class AppDatabase {
 
   getDailyReport(reportDate: string): DailyReport | null {
     return (this.db.prepare(`
-      SELECT id, report_date AS reportDate, content, created_at AS createdAt, updated_at AS updatedAt
-      FROM daily_reports WHERE report_date = ?
+      ${REPORT_SELECT}
+      WHERE report_date = ?
     `).get(reportDate) as DailyReport | undefined) ?? null
+  }
+
+  // 周报/月报聚合用:一次取回本地日期闭区间内的全部日报。
+  listDailyReportsBetween(startDate: string, endDate: string): DailyReport[] {
+    return this.db.prepare(`
+      ${REPORT_SELECT}
+      WHERE report_date >= ? AND report_date <= ?
+      ORDER BY report_date ASC
+    `).all(startDate, endDate) as DailyReport[]
   }
 
   upsertDailyReport(reportDate: string, content: string): DailyReport {

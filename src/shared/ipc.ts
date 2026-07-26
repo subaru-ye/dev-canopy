@@ -32,6 +32,7 @@ export const IpcChannel = {
   ReportsGet: 'reports:get',
   ReportsSave: 'reports:save',
   ReportsDates: 'reports:dates',
+  ReportsRange: 'reports:range',
   PromptsList: 'prompts:list',
   PromptsCreate: 'prompts:create',
   PromptsUpdate: 'prompts:update',

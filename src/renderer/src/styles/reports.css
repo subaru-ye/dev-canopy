@@ -200,3 +200,81 @@
 .report-history-item.is-active em {
   color: inherit;
 }
+
+/* 周/月聚合视图:复用 theme-switch 的分段控件外观,补日报页自身的布局。 */
+.report-view-switch button {
+  min-width: 44px;
+  justify-content: center;
+}
+
+.report-range-label {
+  min-width: 108px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.report-range-copy {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.report-range-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.report-group-head {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 10px 20px 4px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.report-group-head em {
+  padding: 0 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-style: normal;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.report-range-entry {
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.report-range-entry h3 {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.report-range-entry h3 em {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.report-range-entry pre {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

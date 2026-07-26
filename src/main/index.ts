@@ -55,10 +55,14 @@ function createWindow(): void {
       if (!mainWindow || mainWindow.isDestroyed()) return
       const clickSelector = process.env.DEVCANOPY_CAPTURE_CLICK
       if (clickSelector) {
-        // click() 不转移焦点,补 focus() 让后续按键注入能落在表单控件上。
-        await mainWindow.webContents
-          .executeJavaScript(`{ const el = document.querySelector(${JSON.stringify(clickSelector)}); el?.click(); el?.focus?.(); }`)
-          .catch(() => undefined)
+        // ";;" 分隔的选择器依次点击(逗号留给 CSS 选择器列表),支持多步进入的界面状态。
+        for (const selector of clickSelector.split(';;')) {
+          // click() 不转移焦点,补 focus() 让后续按键注入能落在表单控件上。
+          await mainWindow.webContents
+            .executeJavaScript(`{ const el = document.querySelector(${JSON.stringify(selector.trim())}); el?.click(); el?.focus?.(); }`)
+            .catch(() => undefined)
+          await new Promise((resolve) => setTimeout(resolve, 600))
+        }
         // 等过渲染层 800ms 的自动保存防抖,让截图能拍到「已保存」等落库后的状态。
         await new Promise((resolve) => setTimeout(resolve, 1_500))
       }
@@ -329,6 +333,13 @@ function registerIpc(): void {
     return database.upsertDailyReport(reportDate, content)
   })
   ipcMain.handle(IpcChannel.ReportsDates, () => database.listDailyReportDates())
+  ipcMain.handle(IpcChannel.ReportsRange, (_event, startDate: string, endDate: string) => {
+    if (!REPORT_DATE_PATTERN.test(startDate) || !REPORT_DATE_PATTERN.test(endDate)) {
+      throw new Error('日报日期格式不正确。')
+    }
+    if (startDate > endDate) throw new Error('日期区间起点不能晚于终点。')
+    return database.listDailyReportsBetween(startDate, endDate)
+  })
 
   ipcMain.handle(IpcChannel.PromptsList, () => database.listPrompts())
   ipcMain.handle(IpcChannel.PromptsCreate, (_event, draft: PromptDraft) => {

@@ -44,7 +44,8 @@ const api: DevCanopyApi = {
   reports: {
     get: (reportDate: string) => ipcRenderer.invoke(IpcChannel.ReportsGet, reportDate),
     save: (reportDate: string, content: string) => ipcRenderer.invoke(IpcChannel.ReportsSave, reportDate, content),
-    dates: () => ipcRenderer.invoke(IpcChannel.ReportsDates)
+    dates: () => ipcRenderer.invoke(IpcChannel.ReportsDates),
+    range: (startDate: string, endDate: string) => ipcRenderer.invoke(IpcChannel.ReportsRange, startDate, endDate)
   },
   prompts: {
     list: () => ipcRenderer.invoke(IpcChannel.PromptsList),
