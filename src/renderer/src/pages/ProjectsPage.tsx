@@ -1,9 +1,10 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ChevronRight, Folder, FolderOpen } from 'lucide-react'
 import type { FolderInspection, Project } from '../../../shared/types'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { Modal } from '../components/Modal'
 import { useNewItemShortcut } from '../hooks/useNewItemShortcut'
+import { clearJumpIntent, peekJumpIntent } from '../jump'
 import { ProjectDetail } from './ProjectDetail'
 
 interface ProjectsPageProps {
@@ -22,6 +23,15 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
     commands: projects.reduce((sum, project) => sum + project.commandCount, 0),
     tasks: projects.reduce((sum, project) => sum + project.taskCount, 0)
   }), [projects])
+
+  // 全局搜索跳转:项目清单就绪后直接进入目标项目详情。
+  useEffect(() => {
+    const intent = peekJumpIntent('project')
+    if (!intent || projects.length === 0) return
+    clearJumpIntent()
+    const target = projects.find((project) => project.id === intent.id)
+    if (target) setSelectedProject(target)
+  }, [projects])
 
   // 项目详情打开时不劫持:详情页的命令/任务弹窗由 ProjectDetail 与内嵌 TasksPage 处理。
   useNewItemShortcut(() => {

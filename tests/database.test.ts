@@ -109,6 +109,37 @@ test('listProcessRuns 按开始时间倒序并受 limit 约束,listProcessRunIds
   db.close()
 })
 
+test('search 覆盖四类实体,中文关键词可用且摘要含命中片段', () => {
+  const db = openDb()
+  db.createProject({ name: '全域检索工程', path: 'C:\\tmp\\search-proj', commands: [] })
+  db.createTask({ projectId: null, title: '检索任务标题', description: '任务正文里提到全域检索细节', status: 'todo', priority: 'normal', completionNote: '' })
+  db.upsertDailyReport('2026-07-25', '今天调研了全域检索方案，明天继续。')
+  db.createPrompt({ title: '检索提示词', content: '这里保存了全域检索的模板文本' })
+
+  const results = db.search('全域检索')
+  assert.deepEqual(results.map((result) => result.kind).sort(), ['project', 'prompt', 'report', 'task'])
+  const report = results.find((result) => result.kind === 'report')
+  assert.equal(report?.date, '2026-07-25')
+  assert.ok(report?.snippet.includes('全域检索'))
+  assert.equal(results.find((result) => result.kind === 'project')?.title, '全域检索工程')
+  db.close()
+})
+
+test('search 转义 % 与 _,空白关键词返回空,单类限 10 条', () => {
+  const db = openDb()
+  db.createPrompt({ title: '进度 100%达成', content: 'a' })
+  db.createPrompt({ title: '进度 100 分', content: 'b' })
+  // 未转义时 '100%达' 中的 % 会吞掉任意中缀,把 '100 分' 也误伤进来。
+  assert.deepEqual(db.search('100%达').map((result) => result.title), ['进度 100%达成'])
+  assert.equal(db.search('   ').length, 0)
+
+  for (let index = 0; index < 12; index += 1) {
+    db.createTask({ projectId: null, title: `批量任务 ${index}`, description: '', status: 'todo', priority: 'normal', completionNote: '' })
+  }
+  assert.equal(db.search('批量任务').length, 10)
+  db.close()
+})
+
 test('settings 键值表:get 未写返回 null,set 幂等覆盖', () => {
   const db = openDb()
   assert.equal(db.getSetting('theme'), null)

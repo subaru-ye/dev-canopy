@@ -68,6 +68,9 @@ const api: DevCanopyApi = {
     get: (key: string) => ipcRenderer.invoke(IpcChannel.SettingsGet, key),
     set: (key: string, value: string) => ipcRenderer.invoke(IpcChannel.SettingsSet, key, value)
   },
+  search: {
+    query: (query: string) => ipcRenderer.invoke(IpcChannel.SearchQuery, query)
+  },
   app: {
     info: () => ipcRenderer.invoke(IpcChannel.AppInfo)
   }

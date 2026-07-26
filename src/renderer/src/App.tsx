@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Brain, CheckSquare2, FolderKanban, NotebookPen, Settings, Sparkles, TerminalSquare } from 'lucide-react'
-import type { Project } from '../../shared/types'
+import type { Project, SearchResult, SearchResultKind } from '../../shared/types'
+import { CommandPalette } from './components/CommandPalette'
 import { NEW_ITEM_EVENT } from './hooks/useNewItemShortcut'
+import { setJumpIntent } from './jump'
 import { loadThemePreference } from './theme'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { PromptsPage } from './pages/PromptsPage'
@@ -26,9 +28,19 @@ function initialRoute(): Route {
   return navigation.some((item) => item.id === hash) ? hash as Route : 'projects'
 }
 
+const KIND_ROUTE: Record<SearchResultKind, Route> = {
+  project: 'projects',
+  task: 'tasks',
+  report: 'reports',
+  prompt: 'prompts'
+}
+
 export function App() {
   const [route, setRoute] = useState<Route>(initialRoute)
   const [projects, setProjects] = useState<Project[]>([])
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  // 每次搜索跳转 +1,作为目标页 key 强制 remount,让目标页重新读取跳转意图。
+  const [jumpNonce, setJumpNonce] = useState(0)
 
   const reloadProjects = useCallback(async () => {
     setProjects(await window.devcanopy.projects.list())
@@ -39,11 +51,17 @@ export function App() {
   // localStorage 镜像只管首帧防闪烁,settings 表才是权威值:任何路由启动都要校准一次。
   useEffect(() => { void loadThemePreference().catch(() => undefined) }, [])
 
-  // 全局快捷键:Ctrl+1~6 按 navigation 顺序切页,Ctrl+N 广播给当前页开新建弹窗。
-  // 焦点在表单控件或输入法合成中时整体忽略,避免劫持正常输入。
+  // 全局快捷键:Ctrl+1~6 按 navigation 顺序切页,Ctrl+N 广播给当前页开新建弹窗,
+  // Ctrl+K 唤起全局搜索(在表单控件里也生效)。
+  // 其余快捷键在焦点位于表单控件或输入法合成中时整体忽略,避免劫持正常输入。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.isComposing) return
+      if (event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen(true)
+        return
+      }
       const target = event.target instanceof Element ? event.target : null
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
       if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return
@@ -59,6 +77,13 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  const openSearchResult = useCallback((result: SearchResult): void => {
+    setJumpIntent({ kind: result.kind, id: result.id, date: result.date })
+    setPaletteOpen(false)
+    setRoute(KIND_ROUTE[result.kind])
+    setJumpNonce((nonce) => nonce + 1)
   }, [])
 
   // 回写 hash,刷新/崩溃重载后停留在当前页面(initialRoute 会读取它)。
@@ -96,13 +121,14 @@ export function App() {
         </div>
       </aside>
       <main className="main-content" tabIndex={-1}>
-        {route === 'projects' ? <ProjectsPage projects={projects} reloadProjects={reloadProjects} /> : null}
-        {route === 'tasks' ? <TasksPage projects={projects} /> : null}
-        {route === 'reports' ? <ReportsPage /> : null}
-        {route === 'prompts' ? <PromptsPage /> : null}
+        {route === 'projects' ? <ProjectsPage key={jumpNonce} projects={projects} reloadProjects={reloadProjects} /> : null}
+        {route === 'tasks' ? <TasksPage key={jumpNonce} projects={projects} /> : null}
+        {route === 'reports' ? <ReportsPage key={jumpNonce} /> : null}
+        {route === 'prompts' ? <PromptsPage key={jumpNonce} /> : null}
         {route === 'skills' ? <SkillsPage /> : null}
         {route === 'settings' ? <SettingsPage /> : null}
       </main>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onSelect={openSearchResult} />
     </div>
   )
 }

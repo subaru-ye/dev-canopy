@@ -5,6 +5,7 @@ import { Modal } from '../components/Modal'
 import { TaskDetailModal } from '../components/TaskDetailModal'
 import { useEditDialog } from '../hooks/useEditDialog'
 import { useNewItemShortcut } from '../hooks/useNewItemShortcut'
+import { clearJumpIntent, peekJumpIntent } from '../jump'
 import { priorityLabels, statusLabels } from '../utils/taskLabels'
 
 interface TasksPageProps {
@@ -35,6 +36,15 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
   }, [fixedProjectId, scope])
 
   useEffect(() => { void load() }, [load])
+
+  // 全局搜索跳转:任务列表载入后打开目标任务详情。
+  useEffect(() => {
+    const intent = peekJumpIntent('task')
+    if (!intent || tasks.length === 0) return
+    clearJumpIntent()
+    const target = tasks.find((task) => task.id === intent.id)
+    if (target) setDetailTask(target)
+  }, [tasks])
 
   const counts = useMemo(() => ({
     active: tasks.filter((task) => task.status !== 'done').length,

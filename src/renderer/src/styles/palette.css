@@ -1,0 +1,114 @@
+/* Ctrl+K 全局搜索面板:顶部输入框 + 分组结果列表。 */
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding-top: 12vh;
+  background: color-mix(in srgb, var(--backdrop, #000) 52%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.command-palette {
+  display: flex;
+  flex-direction: column;
+  width: min(620px, calc(100vw - 48px));
+  max-height: 60vh;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 45%);
+}
+
+.palette-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 16px;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--line);
+}
+
+.palette-input-row input {
+  flex: 1;
+  color: var(--text);
+  font-size: 14.5px;
+  background: transparent;
+  border: 0;
+}
+
+.palette-input-row input:focus {
+  outline: 0;
+}
+
+.palette-input-row input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.palette-input-row kbd {
+  padding: 2px 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.palette-results {
+  padding: 6px 0 10px;
+  overflow-y: auto;
+}
+
+.palette-empty {
+  padding: 18px 16px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.palette-group-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 10px 16px 4px;
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.palette-row {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 16px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+
+.palette-row strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-row span {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-row.is-active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.palette-row.is-active strong {
+  color: var(--accent);
+}

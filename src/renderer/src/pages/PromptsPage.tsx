@@ -5,6 +5,7 @@ import { ErrorBanner } from '../components/ErrorBanner'
 import { Modal } from '../components/Modal'
 import { useEditDialog } from '../hooks/useEditDialog'
 import { useNewItemShortcut } from '../hooks/useNewItemShortcut'
+import { clearJumpIntent, peekJumpIntent } from '../jump'
 import { dayLabel, timeLabel } from '../utils/dates'
 
 const emptyDraft: PromptDraft = { title: '', content: '' }
@@ -71,6 +72,16 @@ export function PromptsPage() {
   useNewItemShortcut(() => {
     if (!dialog.open) dialog.openCreate(emptyDraft)
   })
+
+  // 全局搜索跳转:记忆列表载入后打开目标记忆的编辑弹窗。
+  useEffect(() => {
+    const intent = peekJumpIntent('prompt')
+    if (!intent || prompts.length === 0) return
+    clearJumpIntent()
+    const target = prompts.find((prompt) => prompt.id === intent.id)
+    if (target) dialog.openEdit(target, { title: target.title, content: target.content })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prompts])
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()

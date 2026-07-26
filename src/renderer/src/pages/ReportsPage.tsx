@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CalendarDays, Check, ChevronLeft, ChevronRight, ListPlus, ScrollText } from 'lucide-react'
 import type { Task } from '../../../shared/types'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { clearJumpIntent, peekJumpIntent } from '../jump'
 import { ReportsRangeView, type RangeView } from './ReportsRangeView'
 import { localDayUtcRange, reportDayLabel, shiftDate, timeLabel, todayLocal } from '../utils/dates'
 
@@ -42,7 +43,15 @@ function completedTaskMarkdown(task: Task): string {
 
 export function ReportsPage() {
   const [view, setView] = useState<ReportView>('day')
-  const [date, setDate] = useState<string>(todayLocal())
+  // 全局搜索跳转:携带日期的意图直接决定初始日期(页面经 remount 进入,无未保存草稿)。
+  const [date, setDate] = useState<string>(() => {
+    const intent = peekJumpIntent('report')
+    if (intent?.date) {
+      clearJumpIntent()
+      return intent.date
+    }
+    return todayLocal()
+  })
   const [today, setToday] = useState<string>(todayLocal())
   const [draft, setDraft] = useState('')
   const [completedTasks, setCompletedTasks] = useState<Task[]>([])

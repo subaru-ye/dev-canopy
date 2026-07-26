@@ -6,4 +6,5 @@
 @import './styles/log-tasks.css'; /* 日志面板/任务分组与详情 */
 @import './styles/reports.css'; /* 日报 */
 @import './styles/prompts.css'; /* 记忆库 */
+@import './styles/palette.css'; /* Ctrl+K 全局搜索 */
 @import './styles/responsive.css'; /* 窄屏与减弱动效媒体查询 */

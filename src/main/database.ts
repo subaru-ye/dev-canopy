@@ -8,11 +8,22 @@ import type {
   ProjectDraft,
   PromptDoc,
   PromptDraft,
+  SearchResult,
   Task,
   TaskChecklistItem,
   TaskDraft,
   TaskNote
 } from '../shared/types'
+
+// 命中位置前后截一段作为搜索结果摘要,压掉换行以免撑爆单行 UI。
+function excerpt(text: string, query: string): string {
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (!clean) return ''
+  const index = clean.toLowerCase().indexOf(query.toLowerCase())
+  if (index < 0) return clean.slice(0, 80)
+  const start = Math.max(0, index - 24)
+  return `${start > 0 ? '…' : ''}${clean.slice(start, index + query.length + 56)}`
+}
 
 // 用 SQLite 在线 backup 拷贝数据库(连同 WAL 中未落盘的写入),供旧路径迁移使用。
 export async function copyDatabase(sourcePath: string, destinationPath: string): Promise<void> {
@@ -635,6 +646,48 @@ export class AppDatabase {
 
   removePrompt(promptId: number): void {
     this.db.prepare('DELETE FROM prompts WHERE id = ?').run(promptId)
+  }
+
+  // 全局搜索:四类实体各限 10 条。% 与 _ 转义后参数化拼接,含中文关键词直接可用。
+  search(query: string): SearchResult[] {
+    const keyword = query.trim()
+    if (!keyword) return []
+    const pattern = `%${keyword.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
+
+    const projects = this.db.prepare(`
+      SELECT id, name, path FROM projects
+      WHERE name LIKE ? ESCAPE '\\'
+      ORDER BY COALESCE(last_opened_at, created_at) DESC
+      LIMIT 10
+    `).all(pattern) as Array<{ id: number; name: string; path: string }>
+
+    const tasks = this.db.prepare(`
+      SELECT id, title, description FROM tasks
+      WHERE title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'
+      ORDER BY created_at DESC
+      LIMIT 10
+    `).all(pattern, pattern) as Array<{ id: number; title: string; description: string }>
+
+    const reports = this.db.prepare(`
+      SELECT id, report_date AS reportDate, content FROM daily_reports
+      WHERE content LIKE ? ESCAPE '\\'
+      ORDER BY report_date DESC
+      LIMIT 10
+    `).all(pattern) as Array<{ id: number; reportDate: string; content: string }>
+
+    const prompts = this.db.prepare(`
+      SELECT id, title, content FROM prompts
+      WHERE title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\'
+      ORDER BY updated_at DESC
+      LIMIT 10
+    `).all(pattern, pattern) as Array<{ id: number; title: string; content: string }>
+
+    return [
+      ...projects.map((row): SearchResult => ({ kind: 'project', id: row.id, title: row.name, snippet: row.path, date: null })),
+      ...tasks.map((row): SearchResult => ({ kind: 'task', id: row.id, title: row.title, snippet: excerpt(row.description, keyword), date: null })),
+      ...reports.map((row): SearchResult => ({ kind: 'report', id: row.id, title: row.reportDate, snippet: excerpt(row.content, keyword), date: row.reportDate })),
+      ...prompts.map((row): SearchResult => ({ kind: 'prompt', id: row.id, title: row.title, snippet: excerpt(row.content, keyword), date: null }))
+    ]
   }
 
   importPrompts(drafts: PromptDraft[]): number {

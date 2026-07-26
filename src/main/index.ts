@@ -70,9 +70,9 @@ function createWindow(): void {
         await new Promise((resolve) => setTimeout(resolve, 1_500))
       }
       // 逗号分隔的按键序列(如 "ctrl+2,ctrl+n"),走 Chromium 输入管线验证快捷键。
-      const keysSpec = process.env.DEVCANOPY_CAPTURE_KEYS
-      if (keysSpec) {
-        for (const combo of keysSpec.split(',')) {
+      const sendKeys = async (spec: string): Promise<void> => {
+        if (!mainWindow) return
+        for (const combo of spec.split(',')) {
           const parts = combo.trim().split('+')
           const keyCode = parts.pop() ?? ''
           const modifiers = parts.map((part) => (part === 'ctrl' ? 'control' : part)) as Array<'control' | 'shift' | 'alt' | 'meta'>
@@ -82,6 +82,20 @@ function createWindow(): void {
           await new Promise((resolve) => setTimeout(resolve, 400))
         }
       }
+      const keysSpec = process.env.DEVCANOPY_CAPTURE_KEYS
+      if (keysSpec) await sendKeys(keysSpec)
+      // 往当前焦点控件注入文本(如搜索框关键词),再执行第二段按键(如 enter 选中)。
+      const typeText = process.env.DEVCANOPY_CAPTURE_TYPE
+      if (typeText) {
+        await mainWindow.webContents.insertText(typeText)
+        await new Promise((resolve) => setTimeout(resolve, 800))
+      }
+      const keysAfter = process.env.DEVCANOPY_CAPTURE_KEYS2
+      if (keysAfter) await sendKeys(keysAfter)
+      // 截图前把关键状态吐给主进程日志(console-message 已转发 warn/error),便于排查交互脚本。
+      await mainWindow.webContents
+        .executeJavaScript(`console.error('[capture-state] hash=' + location.hash + ' palette=' + !!document.querySelector('.command-palette') + ' modal=' + !!document.querySelector('.modal'))`)
+        .catch(() => undefined)
       const image = await mainWindow.webContents.capturePage()
       await fs.writeFile(capturePath, image.toPNG())
       app.quit()
@@ -404,6 +418,11 @@ function registerIpc(): void {
     if (typeof key !== 'string' || !key.trim()) throw new Error('设置键不能为空。')
     if (typeof value !== 'string') throw new Error('设置值必须是字符串。')
     database.setSetting(key, value)
+  })
+
+  ipcMain.handle(IpcChannel.SearchQuery, (_event, query: string) => {
+    if (typeof query !== 'string') throw new Error('搜索关键词必须是字符串。')
+    return database.search(query)
   })
 
   ipcMain.handle(IpcChannel.AppInfo, () => ({

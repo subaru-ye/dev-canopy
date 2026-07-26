@@ -46,6 +46,7 @@ export const IpcChannel = {
   BackupOpenDir: 'backup:open-dir',
   SettingsGet: 'settings:get',
   SettingsSet: 'settings:set',
+  SearchQuery: 'search:query',
   AppInfo: 'app:info'
 } as const
 

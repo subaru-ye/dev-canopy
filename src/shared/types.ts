@@ -155,6 +155,17 @@ export interface SkillInfo {
   issue: string | null
 }
 
+export type SearchResultKind = 'project' | 'task' | 'report' | 'prompt'
+
+export interface SearchResult {
+  kind: SearchResultKind
+  id: number
+  title: string
+  snippet: string
+  // 日报跳转要定位日期,其余实体为 null。
+  date: string | null
+}
+
 export interface AppInfo {
   version: string
   databasePath: string
@@ -224,6 +235,9 @@ export interface DevCanopyApi {
   settings: {
     get: (key: string) => Promise<string | null>
     set: (key: string, value: string) => Promise<void>
+  }
+  search: {
+    query: (query: string) => Promise<SearchResult[]>
   }
   app: {
     info: () => Promise<AppInfo>
