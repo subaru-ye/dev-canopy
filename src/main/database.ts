@@ -3,6 +3,7 @@ import type {
   CommandConfig,
   CommandDraft,
   DailyReport,
+  ProcessRun,
   Project,
   ProjectDraft,
   PromptDoc,
@@ -371,11 +372,27 @@ export class AppDatabase {
     `).run(new Date().toISOString(), exitCode, runId)
   }
 
-  // process_runs 目前只写不读,不清理会无限增长;启动时裁掉保留期之外的历史。
+  // 不清理会无限增长;启动时裁掉保留期之外的历史,调用方随后按存活 id 清理日志文件。
   pruneProcessRuns(retainDays = 30): number {
     const cutoff = new Date(Date.now() - retainDays * 24 * 3600 * 1000).toISOString()
     const result = this.db.prepare('DELETE FROM process_runs WHERE started_at < ?').run(cutoff)
     return result.changes
+  }
+
+  // hasLog 由主进程按日志文件是否存在补齐,数据库层不感知文件系统。
+  listProcessRuns(commandId: number, limit = 20): Array<Omit<ProcessRun, 'hasLog'>> {
+    return this.db.prepare(`
+      SELECT id, command_id AS commandId, pid, started_at AS startedAt, ended_at AS endedAt, exit_code AS exitCode
+      FROM process_runs
+      WHERE command_id = ?
+      ORDER BY started_at DESC, id DESC
+      LIMIT ?
+    `).all(commandId, limit) as Array<Omit<ProcessRun, 'hasLog'>>
+  }
+
+  listProcessRunIds(): number[] {
+    const rows = this.db.prepare('SELECT id FROM process_runs').all() as Array<{ id: number }>
+    return rows.map((row) => row.id)
   }
 
   listTasks(projectId?: number | null): Task[] {

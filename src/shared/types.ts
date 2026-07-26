@@ -65,6 +65,16 @@ export interface CommandRuntime {
   detail: string | null
 }
 
+export interface ProcessRun {
+  id: number
+  commandId: number
+  pid: number | null
+  startedAt: string
+  endedAt: string | null
+  exitCode: number | null
+  hasLog: boolean
+}
+
 export interface Task {
   id: number
   projectId: number | null
@@ -173,6 +183,8 @@ export interface DevCanopyApi {
     statuses: (projectId: number) => Promise<CommandRuntime[]>
     logs: (commandId: number) => Promise<string>
     onLog: (listener: (payload: { commandId: number; chunk: string }) => void) => () => void
+    runs: (commandId: number) => Promise<ProcessRun[]>
+    openRunLog: (commandId: number, runId: number) => Promise<void>
   }
   tasks: {
     list: (projectId?: number | null) => Promise<Task[]>

@@ -5,7 +5,9 @@ import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { runStartupBackup } from './backup'
 import { AppDatabase, copyDatabase } from './database'
 import { ProcessManager } from './process-manager'
+import { cleanupRunLogs, runLogPath } from './run-logs'
 import { scanSkills } from './skills'
+import { systemProbe } from './system-probe'
 import { IpcChannel } from '../shared/ipc'
 import type { CommandDraft, ProjectDraft, PromptDraft, PromptImportResult, TaskDraft, TaskPriority, TaskStatus } from '../shared/types'
 
@@ -14,6 +16,7 @@ let processManager: ProcessManager
 let mainWindow: BrowserWindow | null = null
 let databasePath = ''
 let backupsDir = ''
+let logsDir = ''
 
 const skillsPath = join(process.env.USERPROFILE ?? app.getPath('home'), '.codex', 'skills')
 
@@ -290,6 +293,16 @@ function registerIpc(): void {
     return Promise.all(commands.map((command) => processManager.status(command, project)))
   })
   ipcMain.handle(IpcChannel.CommandsLogs, (_event, commandId: number) => processManager.getLogs(commandId))
+  ipcMain.handle(IpcChannel.CommandsRuns, (_event, commandId: number) =>
+    database.listProcessRuns(commandId).map((run) => ({
+      ...run,
+      hasLog: existsSync(runLogPath(logsDir, run.commandId, run.id))
+    })))
+  ipcMain.handle(IpcChannel.CommandsOpenRunLog, (_event, commandId: number, runId: number) => {
+    const logPath = runLogPath(logsDir, commandId, runId)
+    if (!existsSync(logPath)) throw new Error('日志文件不存在或已被清理。')
+    shell.showItemInFolder(logPath)
+  })
 
   ipcMain.handle(IpcChannel.TasksList, (_event, projectId?: number | null) => database.listTasks(projectId))
   ipcMain.handle(IpcChannel.TasksCreate, (_event, draft: TaskDraft) => {
@@ -407,6 +420,10 @@ app.whenReady().then(async () => {
   database = new AppDatabase(databasePath)
   database.pruneProcessRuns()
   backupsDir = join(app.getPath('userData'), 'backups')
+  logsDir = join(app.getPath('userData'), 'logs')
+  // prune 之后同步清理落盘日志:凡 process_runs 里已不存在的 run,其日志文件一并删除。
+  void cleanupRunLogs(logsDir, new Set(database.listProcessRunIds()))
+    .catch((error) => console.error('[run-logs] 清理运行日志失败。', error))
   // 自动备份不阻塞窗口创建,失败只记日志(例如磁盘满),不影响应用可用。
   void runStartupBackup((destination) => database.backup(destination), backupsDir, todayLocalDate())
     .catch((error) => console.error('[backup] 启动自动备份失败。', error))
@@ -414,7 +431,7 @@ app.whenReady().then(async () => {
     // 可选链防不住已销毁的窗口:destroyed 后访问 webContents 会抛异常并打崩主进程。
     if (!mainWindow || mainWindow.isDestroyed()) return
     mainWindow.webContents.send(IpcChannel.CommandsLogEvent, { commandId, chunk })
-  })
+  }, systemProbe, logsDir)
   registerIpc()
   createWindow()
 

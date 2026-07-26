@@ -17,6 +17,8 @@ export const IpcChannel = {
   CommandsStatuses: 'commands:statuses',
   CommandsLogs: 'commands:logs',
   CommandsLogEvent: 'commands:log',
+  CommandsRuns: 'commands:runs',
+  CommandsOpenRunLog: 'commands:open-run-log',
   TasksList: 'tasks:list',
   TasksCreate: 'tasks:create',
   TasksUpdate: 'tasks:update',

@@ -659,3 +659,71 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 命令运行历史弹窗:起止时间/时长/退出码一行一条,日志按钮打开落盘文件。 */
+.run-history-empty {
+  padding: 6px 2px 10px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+}
+
+.run-history-list {
+  display: grid;
+  max-height: 52vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.run-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 92px auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.run-history-row:last-child {
+  border-bottom: 0;
+}
+
+.run-history-times {
+  display: grid;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.run-history-times span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.run-history-duration {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.run-history-exit {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.run-history-exit.is-ok {
+  color: var(--accent);
+}
+
+.run-history-exit.is-bad {
+  color: var(--danger);
+}
+
+.run-history-log {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}

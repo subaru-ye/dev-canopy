@@ -6,6 +6,7 @@ import {
   ExternalLink,
   FileCode2,
   Folder,
+  History,
   ListRestart,
   Pencil,
   Play,
@@ -20,6 +21,7 @@ import type {
   CommandDraft,
   CommandRuntime,
   DetectionType,
+  ProcessRun,
   Project
 } from '../../../shared/types'
 import { ErrorBanner } from '../components/ErrorBanner'
@@ -48,13 +50,27 @@ const emptyCommand = (projectId: number): CommandDraft => ({
   detectionValue: ''
 })
 
-function formatDuration(startedAt: string | null): string {
-  if (!startedAt) return '—'
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000))
+function clockLabel(seconds: number): string {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   const rest = seconds % 60
   return [hours, minutes, rest].map((part) => String(part).padStart(2, '0')).join(':')
+}
+
+function formatDuration(startedAt: string | null): string {
+  if (!startedAt) return '—'
+  return clockLabel(Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)))
+}
+
+function spanDuration(startedAt: string, endedAt: string | null): string {
+  if (!endedAt) return '—'
+  return clockLabel(Math.max(0, Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000)))
+}
+
+function runStamp(iso: string): string {
+  const date = new Date(iso)
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
 export function ProjectDetail({ project, projects, reloadProjects, onBack }: ProjectDetailProps) {
@@ -65,11 +81,14 @@ export function ProjectDetail({ project, projects, reloadProjects, onBack }: Pro
   const [error, setError] = useState('')
   const [logCommand, setLogCommand] = useState<CommandConfig | null>(null)
   const [logText, setLogText] = useState('')
+  const [historyCommand, setHistoryCommand] = useState<CommandConfig | null>(null)
+  const [runs, setRuns] = useState<ProcessRun[]>([])
+  const [runsLoading, setRunsLoading] = useState(false)
   const dialog = useEditDialog<CommandConfig, CommandDraft>(emptyCommand(project.id))
 
   // 任务 tab 的 Ctrl+N 由内嵌 TasksPage 响应,这里只接管命令 tab。
   useNewItemShortcut(() => {
-    if (tab === 'commands' && !dialog.open && !logCommand) dialog.openCreate(emptyCommand(project.id))
+    if (tab === 'commands' && !dialog.open && !logCommand && !historyCommand) dialog.openCreate(emptyCommand(project.id))
   })
 
   const loadCommands = useCallback(async () => {
@@ -143,6 +162,26 @@ export function ProjectDetail({ project, projects, reloadProjects, onBack }: Pro
   const openLogs = async (command: CommandConfig): Promise<void> => {
     setLogCommand(command)
     setLogText(await window.devcanopy.commands.logs(command.id))
+  }
+
+  const openHistory = async (command: CommandConfig): Promise<void> => {
+    setHistoryCommand(command)
+    setRunsLoading(true)
+    try {
+      setRuns(await window.devcanopy.commands.runs(command.id))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setRunsLoading(false)
+    }
+  }
+
+  const revealRunLog = async (run: ProcessRun): Promise<void> => {
+    try {
+      await window.devcanopy.commands.openRunLog(run.commandId, run.id)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
   }
 
   const editCommand = (command: CommandConfig): void => {
@@ -248,6 +287,7 @@ export function ProjectDetail({ project, projects, reloadProjects, onBack }: Pro
                       )}
                       {runtime.state === 'running' && runtime.pid ? <button className="icon-button" type="button" onClick={() => void runAction(command, 'restart')} disabled={busy} aria-label={`重启 ${command.name}`}><ListRestart size={17} /></button> : null}
                       <button className="icon-button" type="button" onClick={() => void openLogs(command)} aria-label={`查看 ${command.name} 日志`}><ScrollText size={17} /></button>
+                      <button className="icon-button" type="button" onClick={() => void openHistory(command)} aria-label={`查看 ${command.name} 运行历史`}><History size={16} /></button>
                       <button className="icon-button" type="button" onClick={() => editCommand(command)} disabled={runtime.state === 'running'} aria-label={`编辑 ${command.name}`}><Pencil size={16} /></button>
                       <button className="icon-button danger" type="button" onClick={() => void removeCommand(command)} aria-label={`删除 ${command.name}`}><Trash2 size={16} /></button>
                     </div>
@@ -278,6 +318,43 @@ export function ProjectDetail({ project, projects, reloadProjects, onBack }: Pro
           <label className="field"><span>检测值</span><input value={dialog.draft.detectionValue} onChange={(event) => dialog.setDraft({ ...dialog.draft, detectionValue: event.target.value })} disabled={dialog.draft.detectionType === 'none'} placeholder={dialog.draft.detectionType === 'port' ? '5173' : dialog.draft.detectionType === 'health' ? 'http://localhost:3000/health' : dialog.draft.detectionType === 'process' ? 'vite' : '无需填写'} /></label>
           {dialog.error ? <p className="form-error span-2" role="alert">{dialog.error}</p> : null}
         </div>
+      </Modal>
+
+      <Modal
+        open={historyCommand !== null}
+        title={historyCommand ? `运行历史 · ${historyCommand.name}` : '运行历史'}
+        description="最近 20 次运行。日志随进程输出落盘,可在文件夹中查看完整内容。"
+        onClose={() => setHistoryCommand(null)}
+      >
+        {runsLoading ? (
+          <p className="run-history-empty">正在读取…</p>
+        ) : runs.length === 0 ? (
+          <p className="run-history-empty">还没有运行记录。启动一次命令后,历史会出现在这里。</p>
+        ) : (
+          <div className="run-history-list">
+            {runs.map((run) => (
+              <div className="run-history-row" key={run.id}>
+                <div className="run-history-times">
+                  <strong>{runStamp(run.startedAt)}</strong>
+                  <span>{run.endedAt ? `→ ${runStamp(run.endedAt)}` : '未结算'}</span>
+                </div>
+                <span className="run-history-duration"><Clock3 size={13} />{spanDuration(run.startedAt, run.endedAt)}</span>
+                <span className={`run-history-exit${run.exitCode === 0 ? ' is-ok' : run.exitCode !== null ? ' is-bad' : ''}`}>
+                  {run.exitCode === null ? '—' : `退出码 ${run.exitCode}`}
+                </span>
+                <button
+                  className="button ghost run-history-log"
+                  type="button"
+                  disabled={!run.hasLog}
+                  title={run.hasLog ? '在文件夹中显示日志文件' : '这次运行没有日志文件'}
+                  onClick={() => void revealRunLog(run)}
+                >
+                  <ScrollText size={14} /> 日志
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </Modal>
 
       {logCommand ? (

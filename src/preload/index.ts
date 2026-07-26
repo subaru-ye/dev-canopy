@@ -21,6 +21,8 @@ const api: DevCanopyApi = {
     stop: (commandId: number) => ipcRenderer.invoke(IpcChannel.CommandsStop, commandId),
     statuses: (projectId: number) => ipcRenderer.invoke(IpcChannel.CommandsStatuses, projectId),
     logs: (commandId: number) => ipcRenderer.invoke(IpcChannel.CommandsLogs, commandId),
+    runs: (commandId: number) => ipcRenderer.invoke(IpcChannel.CommandsRuns, commandId),
+    openRunLog: (commandId: number, runId: number) => ipcRenderer.invoke(IpcChannel.CommandsOpenRunLog, commandId, runId),
     onLog: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: { commandId: number; chunk: string }): void => listener(payload)
       ipcRenderer.on(IpcChannel.CommandsLogEvent, handler)

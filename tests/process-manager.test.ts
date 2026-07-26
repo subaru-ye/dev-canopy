@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import type { AppDatabase } from '../src/main/database.ts'
 import { ProcessManager } from '../src/main/process-manager.ts'
@@ -191,6 +194,33 @@ test('stopManaged 等待 in-flight 启动落定后再终止,不放跑刚 spawn �
   assert.deepEqual(killed, [77])
   assert.deepEqual(finished, [{ runId: 1, exitCode: null }])
   assert.equal(manager.getLogs(command.id), '')
+})
+
+test('传入 logsDir 时输出落盘为 <commandId>/<runId>.log,close 后内容完整', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'devcanopy-pm-logs-'))
+  try {
+    const child = new FakeChild(888)
+    const { probe } = fakeProbe({ spawnCommand: () => asChild(child) })
+    const manager = new ProcessManager(fakeDatabase().db, () => {}, probe, dir)
+    await manager.start(makeCommand(), project)
+
+    child.stdout.emit('data', Buffer.from('server started\n'))
+    child.stderr.emit('data', Buffer.from('warn: low memory\n'))
+    child.exitCode = 0
+    child.emit('exit', 0)
+    child.emit('close', 0)
+
+    // 等 WriteStream 异步 flush 完成后再断言文件内容。
+    const logPath = join(dir, '1', '1.log')
+    const expected = 'server started\nwarn: low memory\n'
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      if (existsSync(logPath) && readFileSync(logPath, 'utf8') === expected) break
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 20))
+    }
+    assert.equal(readFileSync(logPath, 'utf8'), expected)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('端口检测经 probe 报告 detected 运行态', async () => {

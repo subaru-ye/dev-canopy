@@ -1,14 +1,17 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
-import { resolve } from 'node:path'
+import { createWriteStream, mkdirSync, type WriteStream } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import type { CommandConfig, CommandRuntime, Project } from '../shared/types'
 import type { AppDatabase } from './database'
 import { matchAutomaticProcess, type ProcessSnapshot } from './process-detection'
+import { runLogPath } from './run-logs'
 import { systemProbe, type SystemProbe } from './system-probe'
 
 interface ManagedProcess {
   child: ChildProcessWithoutNullStreams
   startedAt: string
   runId: number
+  logStream: WriteStream | null
 }
 
 export class ProcessManager {
@@ -25,8 +28,24 @@ export class ProcessManager {
   constructor(
     private readonly database: AppDatabase,
     private readonly emitLog: (commandId: number, chunk: string) => void,
-    private readonly probe: SystemProbe = systemProbe
+    private readonly probe: SystemProbe = systemProbe,
+    private readonly logsDir: string | null = null
   ) {}
+
+  // 日志落盘失败(磁盘满/权限)只退化为内存日志,不阻断启动;
+  // 流上的写入错误也必须吞掉,否则会抛成主进程未捕获异常。
+  private openRunLog(commandId: number, runId: number): WriteStream | null {
+    if (!this.logsDir) return null
+    try {
+      const path = runLogPath(this.logsDir, commandId, runId)
+      mkdirSync(dirname(path), { recursive: true })
+      const stream = createWriteStream(path)
+      stream.on('error', () => undefined)
+      return stream
+    } catch {
+      return null
+    }
+  }
 
   // status 检测最长可达数秒,同一命令的并发 start 共享同一次启动,避免双进程失管。
   start(command: CommandConfig, project: Project): Promise<CommandRuntime> {
@@ -56,16 +75,20 @@ export class ProcessManager {
 
     const startedAt = new Date().toISOString()
     const runId = this.database.createProcessRun(command.id, child.pid ?? 0, startedAt)
-    this.managed.set(command.id, { child, startedAt, runId })
+    const logStream = this.openRunLog(command.id, runId)
+    this.managed.set(command.id, { child, startedAt, runId, logStream })
 
     const append = (data: Buffer): void => {
       const chunk = data.toString('utf8')
       const previous = this.logs.get(command.id) ?? ''
       this.logs.set(command.id, (previous + chunk).slice(-200_000))
+      if (logStream && !logStream.writableEnded) logStream.write(chunk)
       this.emitLog(command.id, chunk)
     }
     child.stdout.on('data', append)
     child.stderr.on('data', append)
+    // exit 后管道里可能还有尾部输出,等 stdio 全部关闭(close)再收尾日志文件。
+    child.on('close', () => logStream?.end())
     child.on('error', (error) => {
       this.lastErrors.set(command.id, error.message)
       append(Buffer.from(`\n[DevCanopy] ${error.message}\n`, 'utf8'))
@@ -73,6 +96,7 @@ export class ProcessManager {
       if (this.managed.get(command.id)?.child === child) {
         this.managed.delete(command.id)
         this.finishRunSafely(runId, null)
+        logStream?.end()
       }
     })
     child.on('exit', (code) => {
@@ -120,6 +144,7 @@ export class ProcessManager {
     if (entry) {
       this.managed.delete(commandId)
       this.finishRunSafely(entry.runId, null)
+      entry.logStream?.end()
       if (entry.child.pid) await this.killTree(entry.child.pid).catch(() => undefined)
     }
     this.startInFlight.delete(commandId)
@@ -140,6 +165,7 @@ export class ProcessManager {
       } catch {
         // 尽力结算。
       }
+      entry.logStream?.end()
     }
     await Promise.allSettled(
       entries

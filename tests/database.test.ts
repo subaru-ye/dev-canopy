@@ -88,6 +88,27 @@ test('pruneProcessRuns 只裁保留期之外的记录', () => {
   db.close()
 })
 
+test('listProcessRuns 按开始时间倒序并受 limit 约束,listProcessRunIds 返回全量', () => {
+  const db = openDb()
+  const project = db.createProject({ name: '示例', path: 'C:\\tmp\\proj', commands: [{ name: 'dev', command: 'npm run dev', workingDirectory: '' }] })
+  const command = db.listCommands(project.id)[0]
+  const base = Date.now()
+  const ids: number[] = []
+  for (let index = 0; index < 3; index += 1) {
+    ids.push(db.createProcessRun(command.id, 100 + index, new Date(base + index * 1000).toISOString()))
+  }
+  db.finishProcessRun(ids[2], 0)
+
+  const runs = db.listProcessRuns(command.id)
+  assert.deepEqual(runs.map((run) => run.id), [ids[2], ids[1], ids[0]])
+  assert.equal(runs[0].exitCode, 0)
+  assert.ok(runs[0].endedAt !== null)
+  assert.equal(runs[1].exitCode, null)
+  assert.equal(db.listProcessRuns(command.id, 2).length, 2)
+  assert.deepEqual(db.listProcessRunIds().sort(), ids.sort())
+  db.close()
+})
+
 test('settings 键值表:get 未写返回 null,set 幂等覆盖', () => {
   const db = openDb()
   assert.equal(db.getSetting('theme'), null)
