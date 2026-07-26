@@ -1,4 +1,4 @@
-# DevDesk Design System
+# DevCanopy Design System
 
 ## Visual thesis
 

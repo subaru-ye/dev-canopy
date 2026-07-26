@@ -4,6 +4,7 @@ dist/
 release/
 *.log
 devdesk*-smoke.png
+devcanopy*-smoke.png
 *.db
 *.db-shm
 *.db-wal
