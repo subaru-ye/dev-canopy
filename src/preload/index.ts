@@ -8,7 +8,9 @@ const api: DevCanopyApi = {
     selectFolder: () => ipcRenderer.invoke(IpcChannel.ProjectsSelectFolder),
     create: (draft: ProjectDraft) => ipcRenderer.invoke(IpcChannel.ProjectsCreate, draft),
     remove: (projectId: number) => ipcRenderer.invoke(IpcChannel.ProjectsRemove, projectId),
-    reveal: (projectPath: string) => ipcRenderer.invoke(IpcChannel.ProjectsReveal, projectPath)
+    reveal: (projectPath: string) => ipcRenderer.invoke(IpcChannel.ProjectsReveal, projectPath),
+    openEditor: (projectPath: string) => ipcRenderer.invoke(IpcChannel.ProjectsOpenEditor, projectPath),
+    openTerminal: (projectPath: string) => ipcRenderer.invoke(IpcChannel.ProjectsOpenTerminal, projectPath)
   },
   commands: {
     list: (projectId: number) => ipcRenderer.invoke(IpcChannel.CommandsList, projectId),

@@ -169,6 +169,15 @@ export function ProjectDetail({ project, projects, reloadProjects, onBack }: Pro
     await reloadProjects()
   }
 
+  const openWith = async (target: 'editor' | 'terminal'): Promise<void> => {
+    try {
+      if (target === 'editor') await window.devcanopy.projects.openEditor(project.path)
+      else await window.devcanopy.projects.openTerminal(project.path)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
+
   const removeProject = async (): Promise<void> => {
     if (!window.confirm(`从 DevCanopy 移除“${project.name}”？项目文件不会被删除。`)) return
     await window.devcanopy.projects.remove(project.id)
@@ -191,7 +200,11 @@ export function ProjectDetail({ project, projects, reloadProjects, onBack }: Pro
           </span>
           <span><b>{commands.length}</b> 条命令</span>
         </div>
-        <button className="button ghost" type="button" onClick={() => void window.devcanopy.projects.reveal(project.path)}><ExternalLink size={15} /> 打开目录</button>
+        <div className="button-group">
+          <button className="button ghost" type="button" onClick={() => void window.devcanopy.projects.reveal(project.path)}><ExternalLink size={15} /> 打开目录</button>
+          <button className="button ghost" type="button" onClick={() => void openWith('editor')}><FileCode2 size={15} /> VS Code</button>
+          <button className="button ghost" type="button" onClick={() => void openWith('terminal')}><SquareTerminal size={15} /> 终端</button>
+        </div>
       </header>
 
       <nav className="project-tabs" aria-label="项目页面">

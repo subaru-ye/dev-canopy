@@ -6,6 +6,8 @@ export const IpcChannel = {
   ProjectsCreate: 'projects:create',
   ProjectsRemove: 'projects:remove',
   ProjectsReveal: 'projects:reveal',
+  ProjectsOpenEditor: 'projects:open-editor',
+  ProjectsOpenTerminal: 'projects:open-terminal',
   CommandsList: 'commands:list',
   CommandsCreate: 'commands:create',
   CommandsUpdate: 'commands:update',

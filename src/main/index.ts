@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { spawn } from 'node:child_process'
 import { existsSync, promises as fs } from 'node:fs'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { runStartupBackup } from './backup'
@@ -147,6 +148,21 @@ async function inspectProjectFolder(projectPath: string) {
   }
 }
 
+// 经 cmd /c 跑短命启动器(code/wt 拉起目标后即退),用退出码区分"已拉起"与"命令不存在"。
+function runWindowsLauncher(args: string[], cwd: string, failureMessage: string): Promise<void> {
+  if (process.platform !== 'win32') {
+    return Promise.reject(new Error('当前功能仅支持 Windows。'))
+  }
+  return new Promise((resolve, reject) => {
+    const child = spawn('cmd.exe', ['/c', ...args], { cwd, detached: true, stdio: 'ignore' })
+    child.once('error', () => reject(new Error(failureMessage)))
+    child.once('exit', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(failureMessage))
+    })
+  })
+}
+
 const REPORT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const PROMPT_IMPORT_MAX_BYTES = 2 * 1024 * 1024
 const TASK_STATUSES: TaskStatus[] = ['todo', 'doing', 'done']
@@ -217,6 +233,20 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.ProjectsReveal, async (_event, projectPath: string) => {
     const error = await shell.openPath(projectPath)
     if (error) throw new Error(error)
+  })
+  ipcMain.handle(IpcChannel.ProjectsOpenEditor, async (_event, projectPath: string) => {
+    if (!existsSync(projectPath)) throw new Error('项目目录不存在。')
+    // code 在 Windows 上是 cmd 脚本,不能直接 spawn,须经 cmd /c 解析。
+    await runWindowsLauncher(['code', '.'], projectPath, '无法启动 VS Code：请确认已安装并把 code 加入 PATH。')
+  })
+  ipcMain.handle(IpcChannel.ProjectsOpenTerminal, async (_event, projectPath: string) => {
+    if (!existsSync(projectPath)) throw new Error('项目目录不存在。')
+    try {
+      await runWindowsLauncher(['wt', '-d', projectPath], projectPath, 'Windows Terminal 不可用。')
+    } catch {
+      // 没装 Windows Terminal 时回退系统自带 cmd,start 的空引号是窗口标题占位。
+      await runWindowsLauncher(['start', '', 'cmd'], projectPath, '无法打开终端。')
+    }
   })
 
   ipcMain.handle(IpcChannel.CommandsList, (_event, projectId: number) => {

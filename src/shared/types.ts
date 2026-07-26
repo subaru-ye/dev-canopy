@@ -160,6 +160,8 @@ export interface DevCanopyApi {
     create: (draft: ProjectDraft) => Promise<Project>
     remove: (projectId: number) => Promise<void>
     reveal: (projectPath: string) => Promise<void>
+    openEditor: (projectPath: string) => Promise<void>
+    openTerminal: (projectPath: string) => Promise<void>
   }
   commands: {
     list: (projectId: number) => Promise<CommandConfig[]>
