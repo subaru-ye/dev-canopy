@@ -75,6 +75,18 @@ test('prompts CRUD 与批量导入的回退标题', () => {
   db.close()
 })
 
+test('pruneProcessRuns 只裁保留期之外的记录', () => {
+  const db = openDb()
+  const project = db.createProject({ name: '示例', path: 'C:\\tmp\\proj', commands: [{ name: 'dev', command: 'npm run dev', workingDirectory: '' }] })
+  const command = db.listCommands(project.id)[0]
+  const oldRun = db.createProcessRun(command.id, 100, new Date(Date.now() - 40 * 24 * 3600 * 1000).toISOString())
+  db.createProcessRun(command.id, 101, new Date().toISOString())
+  db.finishProcessRun(oldRun, 0)
+  assert.equal(db.pruneProcessRuns(30), 1)
+  assert.equal(db.pruneProcessRuns(30), 0)
+  db.close()
+})
+
 test('版本化迁移:老库二次打开不重复执行且数据保留', () => {
   const dbPath = join(tmpdir(), `devcanopy-test-${process.pid}-${Math.floor(Math.random() * 1e9)}.db`)
   try {

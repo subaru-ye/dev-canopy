@@ -316,6 +316,7 @@ function registerIpc(): void {
 app.whenReady().then(async () => {
   databasePath = await resolveDatabasePath()
   database = new AppDatabase(databasePath)
+  database.pruneProcessRuns()
   processManager = new ProcessManager(database, (commandId, chunk) => {
     // 可选链防不住已销毁的窗口:destroyed 后访问 webContents 会抛异常并打崩主进程。
     if (!mainWindow || mainWindow.isDestroyed()) return

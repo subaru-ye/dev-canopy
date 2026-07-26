@@ -23,6 +23,58 @@ export async function copyDatabase(sourcePath: string, destinationPath: string):
   }
 }
 
+// 共享的列映射片段:同一实体的 SELECT/INSERT 只写一份,加列时不会漏改某个读取点。
+const PROJECT_SELECT = `
+  SELECT
+    p.id,
+    p.name,
+    p.path,
+    p.created_at AS createdAt,
+    p.last_opened_at AS lastOpenedAt,
+    (SELECT COUNT(*) FROM commands c WHERE c.project_id = p.id) AS commandCount,
+    (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status != 'done') AS taskCount
+  FROM projects p`
+
+const COMMAND_SELECT = `
+  SELECT
+    id,
+    project_id AS projectId,
+    name,
+    command,
+    working_directory AS workingDirectory,
+    shell,
+    detection_type AS detectionType,
+    detection_value AS detectionValue,
+    sort_order AS sortOrder,
+    created_at AS createdAt
+  FROM commands`
+
+const TASK_SELECT = `
+  SELECT
+    t.id,
+    t.project_id AS projectId,
+    p.name AS projectName,
+    t.title,
+    t.description,
+    t.status,
+    t.priority,
+    t.completion_note AS completionNote,
+    t.created_at AS createdAt,
+    t.completed_at AS completedAt,
+    (SELECT COUNT(*) FROM task_notes n WHERE n.task_id = t.id) AS noteCount,
+    (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id AND c.done = 1) AS checklistDone,
+    (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id) AS checklistTotal
+  FROM tasks t
+  LEFT JOIN projects p ON p.id = t.project_id`
+
+const PROMPT_SELECT = `
+  SELECT id, title, content, created_at AS createdAt, updated_at AS updatedAt
+  FROM prompts`
+
+const PROMPT_INSERT = `
+  INSERT INTO prompts (title, content, created_at, updated_at)
+  VALUES (@title, @content, @createdAt, @updatedAt)`
+
 export class AppDatabase {
   private readonly db: Database.Database
 
@@ -141,30 +193,14 @@ export class AppDatabase {
 
   listProjects(): Project[] {
     return this.db.prepare(`
-      SELECT
-        p.id,
-        p.name,
-        p.path,
-        p.created_at AS createdAt,
-        p.last_opened_at AS lastOpenedAt,
-        (SELECT COUNT(*) FROM commands c WHERE c.project_id = p.id) AS commandCount,
-        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status != 'done') AS taskCount
-      FROM projects p
+      ${PROJECT_SELECT}
       ORDER BY COALESCE(p.last_opened_at, p.created_at) DESC
     `).all() as Project[]
   }
 
   getProject(projectId: number): Project | null {
     return (this.db.prepare(`
-      SELECT
-        p.id,
-        p.name,
-        p.path,
-        p.created_at AS createdAt,
-        p.last_opened_at AS lastOpenedAt,
-        (SELECT COUNT(*) FROM commands c WHERE c.project_id = p.id) AS commandCount,
-        (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status != 'done') AS taskCount
-      FROM projects p
+      ${PROJECT_SELECT}
       WHERE p.id = ?
     `).get(projectId) as Project | undefined) ?? null
   }
@@ -222,18 +258,7 @@ export class AppDatabase {
 
   listCommands(projectId: number): CommandConfig[] {
     return this.db.prepare(`
-      SELECT
-        id,
-        project_id AS projectId,
-        name,
-        command,
-        working_directory AS workingDirectory,
-        shell,
-        detection_type AS detectionType,
-        detection_value AS detectionValue,
-        sort_order AS sortOrder,
-        created_at AS createdAt
-      FROM commands
+      ${COMMAND_SELECT}
       WHERE project_id = ?
       ORDER BY sort_order ASC, id ASC
     `).all(projectId) as CommandConfig[]
@@ -241,18 +266,7 @@ export class AppDatabase {
 
   getCommand(commandId: number): CommandConfig | null {
     return (this.db.prepare(`
-      SELECT
-        id,
-        project_id AS projectId,
-        name,
-        command,
-        working_directory AS workingDirectory,
-        shell,
-        detection_type AS detectionType,
-        detection_value AS detectionValue,
-        sort_order AS sortOrder,
-        created_at AS createdAt
-      FROM commands
+      ${COMMAND_SELECT}
       WHERE id = ?
     `).get(commandId) as CommandConfig | undefined) ?? null
   }
@@ -325,6 +339,13 @@ export class AppDatabase {
     `).run(new Date().toISOString(), exitCode, runId)
   }
 
+  // process_runs 目前只写不读,不清理会无限增长;启动时裁掉保留期之外的历史。
+  pruneProcessRuns(retainDays = 30): number {
+    const cutoff = new Date(Date.now() - retainDays * 24 * 3600 * 1000).toISOString()
+    const result = this.db.prepare('DELETE FROM process_runs WHERE started_at < ?').run(cutoff)
+    return result.changes
+  }
+
   listTasks(projectId?: number | null): Task[] {
     let where = ''
     const params: unknown[] = []
@@ -335,22 +356,7 @@ export class AppDatabase {
       where = 'WHERE t.project_id IS NULL'
     }
     return this.db.prepare(`
-      SELECT
-        t.id,
-        t.project_id AS projectId,
-        p.name AS projectName,
-        t.title,
-        t.description,
-        t.status,
-        t.priority,
-        t.completion_note AS completionNote,
-        t.created_at AS createdAt,
-        t.completed_at AS completedAt,
-        (SELECT COUNT(*) FROM task_notes n WHERE n.task_id = t.id) AS noteCount,
-        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id AND c.done = 1) AS checklistDone,
-        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id) AS checklistTotal
-      FROM tasks t
-      LEFT JOIN projects p ON p.id = t.project_id
+      ${TASK_SELECT}
       ${where}
       ORDER BY
         CASE t.status WHEN 'doing' THEN 0 WHEN 'todo' THEN 1 ELSE 2 END,
@@ -361,22 +367,7 @@ export class AppDatabase {
 
   getTask(taskId: number): Task | null {
     return (this.db.prepare(`
-      SELECT
-        t.id,
-        t.project_id AS projectId,
-        p.name AS projectName,
-        t.title,
-        t.description,
-        t.status,
-        t.priority,
-        t.completion_note AS completionNote,
-        t.created_at AS createdAt,
-        t.completed_at AS completedAt,
-        (SELECT COUNT(*) FROM task_notes n WHERE n.task_id = t.id) AS noteCount,
-        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id AND c.done = 1) AS checklistDone,
-        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id) AS checklistTotal
-      FROM tasks t
-      LEFT JOIN projects p ON p.id = t.project_id
+      ${TASK_SELECT}
       WHERE t.id = ?
     `).get(taskId) as Task | undefined) ?? null
   }
@@ -504,22 +495,7 @@ export class AppDatabase {
 
   listTasksCompletedBetween(startIso: string, endIso: string): Task[] {
     return this.db.prepare(`
-      SELECT
-        t.id,
-        t.project_id AS projectId,
-        p.name AS projectName,
-        t.title,
-        t.description,
-        t.status,
-        t.priority,
-        t.completion_note AS completionNote,
-        t.created_at AS createdAt,
-        t.completed_at AS completedAt,
-        (SELECT COUNT(*) FROM task_notes n WHERE n.task_id = t.id) AS noteCount,
-        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id AND c.done = 1) AS checklistDone,
-        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id) AS checklistTotal
-      FROM tasks t
-      LEFT JOIN projects p ON p.id = t.project_id
+      ${TASK_SELECT}
       WHERE t.status = 'done' AND t.completed_at >= ? AND t.completed_at < ?
       ORDER BY t.completed_at ASC
     `).all(startIso, endIso) as Task[]
@@ -559,25 +535,21 @@ export class AppDatabase {
 
   listPrompts(): PromptDoc[] {
     return this.db.prepare(`
-      SELECT id, title, content, created_at AS createdAt, updated_at AS updatedAt
-      FROM prompts
+      ${PROMPT_SELECT}
       ORDER BY updated_at DESC, id DESC
     `).all() as PromptDoc[]
   }
 
   getPrompt(promptId: number): PromptDoc | null {
     return (this.db.prepare(`
-      SELECT id, title, content, created_at AS createdAt, updated_at AS updatedAt
-      FROM prompts WHERE id = ?
+      ${PROMPT_SELECT}
+      WHERE id = ?
     `).get(promptId) as PromptDoc | undefined) ?? null
   }
 
   createPrompt(draft: PromptDraft): PromptDoc {
     const now = new Date().toISOString()
-    const result = this.db.prepare(`
-      INSERT INTO prompts (title, content, created_at, updated_at)
-      VALUES (@title, @content, @createdAt, @updatedAt)
-    `).run({
+    const result = this.db.prepare(PROMPT_INSERT).run({
       title: draft.title.trim(),
       content: draft.content,
       createdAt: now,
@@ -609,10 +581,7 @@ export class AppDatabase {
 
   importPrompts(drafts: PromptDraft[]): number {
     const now = new Date().toISOString()
-    const insert = this.db.prepare(`
-      INSERT INTO prompts (title, content, created_at, updated_at)
-      VALUES (@title, @content, @createdAt, @updatedAt)
-    `)
+    const insert = this.db.prepare(PROMPT_INSERT)
     this.db.transaction(() => {
       for (const draft of drafts) {
         insert.run({
