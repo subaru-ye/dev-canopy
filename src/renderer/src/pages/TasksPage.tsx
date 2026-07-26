@@ -4,6 +4,7 @@ import type { Project, Task, TaskDraft, TaskPriority, TaskStatus } from '../../.
 import { Modal } from '../components/Modal'
 import { TaskDetailModal } from '../components/TaskDetailModal'
 import { useEditDialog } from '../hooks/useEditDialog'
+import { useNewItemShortcut } from '../hooks/useNewItemShortcut'
 import { priorityLabels, statusLabels } from '../utils/taskLabels'
 
 interface TasksPageProps {
@@ -49,6 +50,10 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
   const openCreate = (): void => {
     dialog.openCreate({ ...emptyDraft, projectId: fixedProjectId ?? null })
   }
+
+  useNewItemShortcut(() => {
+    if (!dialog.open && !detailTask) openCreate()
+  })
 
   const openEdit = (task: Task): void => {
     dialog.openEdit(task, {

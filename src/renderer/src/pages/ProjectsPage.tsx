@@ -3,6 +3,7 @@ import { ChevronRight, Folder, FolderOpen } from 'lucide-react'
 import type { FolderInspection, Project } from '../../../shared/types'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { Modal } from '../components/Modal'
+import { useNewItemShortcut } from '../hooks/useNewItemShortcut'
 import { ProjectDetail } from './ProjectDetail'
 
 interface ProjectsPageProps {
@@ -21,6 +22,11 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
     commands: projects.reduce((sum, project) => sum + project.commandCount, 0),
     tasks: projects.reduce((sum, project) => sum + project.taskCount, 0)
   }), [projects])
+
+  // 项目详情打开时不劫持:详情页的命令/任务弹窗由 ProjectDetail 与内嵌 TasksPage 处理。
+  useNewItemShortcut(() => {
+    if (!selectedProject && !inspection && !importBusy) void beginImport()
+  })
 
   const beginImport = async (): Promise<void> => {
     setError('')

@@ -4,6 +4,7 @@ import type { PromptDoc, PromptDraft } from '../../../shared/types'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { Modal } from '../components/Modal'
 import { useEditDialog } from '../hooks/useEditDialog'
+import { useNewItemShortcut } from '../hooks/useNewItemShortcut'
 import { dayLabel, timeLabel } from '../utils/dates'
 
 const emptyDraft: PromptDraft = { title: '', content: '' }
@@ -32,6 +33,10 @@ export function PromptsPage() {
   useEffect(() => () => {
     if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current)
   }, [])
+
+  useNewItemShortcut(() => {
+    if (!dialog.open) dialog.openCreate(emptyDraft)
+  })
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase()

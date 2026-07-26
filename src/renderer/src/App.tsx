@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Brain, CheckSquare2, FolderKanban, NotebookPen, Settings, Sparkles, TerminalSquare } from 'lucide-react'
 import type { Project } from '../../shared/types'
+import { NEW_ITEM_EVENT } from './hooks/useNewItemShortcut'
 import { loadThemePreference } from './theme'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { PromptsPage } from './pages/PromptsPage'
@@ -37,6 +38,28 @@ export function App() {
 
   // localStorage 镜像只管首帧防闪烁,settings 表才是权威值:任何路由启动都要校准一次。
   useEffect(() => { void loadThemePreference().catch(() => undefined) }, [])
+
+  // 全局快捷键:Ctrl+1~6 按 navigation 顺序切页,Ctrl+N 广播给当前页开新建弹窗。
+  // 焦点在表单控件或输入法合成中时整体忽略,避免劫持正常输入。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.isComposing) return
+      const target = event.target instanceof Element ? event.target : null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return
+      if (event.key >= '1' && event.key <= String(navigation.length)) {
+        event.preventDefault()
+        setRoute(navigation[Number(event.key) - 1].id)
+        return
+      }
+      if (event.key.toLowerCase() === 'n') {
+        event.preventDefault()
+        window.dispatchEvent(new CustomEvent(NEW_ITEM_EVENT))
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // 回写 hash,刷新/崩溃重载后停留在当前页面(initialRoute 会读取它)。
   useEffect(() => {

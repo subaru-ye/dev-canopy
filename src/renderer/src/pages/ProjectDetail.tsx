@@ -26,6 +26,7 @@ import { ErrorBanner } from '../components/ErrorBanner'
 import { Modal } from '../components/Modal'
 import { StatusBadge } from '../components/StatusBadge'
 import { useEditDialog } from '../hooks/useEditDialog'
+import { useNewItemShortcut } from '../hooks/useNewItemShortcut'
 import { TasksPage } from './TasksPage'
 
 interface ProjectDetailProps {
@@ -65,6 +66,11 @@ export function ProjectDetail({ project, projects, reloadProjects, onBack }: Pro
   const [logCommand, setLogCommand] = useState<CommandConfig | null>(null)
   const [logText, setLogText] = useState('')
   const dialog = useEditDialog<CommandConfig, CommandDraft>(emptyCommand(project.id))
+
+  // 任务 tab 的 Ctrl+N 由内嵌 TasksPage 响应,这里只接管命令 tab。
+  useNewItemShortcut(() => {
+    if (tab === 'commands' && !dialog.open && !logCommand) dialog.openCreate(emptyCommand(project.id))
+  })
 
   const loadCommands = useCallback(async () => {
     const [nextCommands, statuses] = await Promise.all([

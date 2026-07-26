@@ -54,11 +54,25 @@ function createWindow(): void {
       if (!mainWindow || mainWindow.isDestroyed()) return
       const clickSelector = process.env.DEVCANOPY_CAPTURE_CLICK
       if (clickSelector) {
+        // click() 不转移焦点,补 focus() 让后续按键注入能落在表单控件上。
         await mainWindow.webContents
-          .executeJavaScript(`document.querySelector(${JSON.stringify(clickSelector)})?.click()`)
+          .executeJavaScript(`{ const el = document.querySelector(${JSON.stringify(clickSelector)}); el?.click(); el?.focus?.(); }`)
           .catch(() => undefined)
         // 等过渲染层 800ms 的自动保存防抖,让截图能拍到「已保存」等落库后的状态。
         await new Promise((resolve) => setTimeout(resolve, 1_500))
+      }
+      // 逗号分隔的按键序列(如 "ctrl+2,ctrl+n"),走 Chromium 输入管线验证快捷键。
+      const keysSpec = process.env.DEVCANOPY_CAPTURE_KEYS
+      if (keysSpec) {
+        for (const combo of keysSpec.split(',')) {
+          const parts = combo.trim().split('+')
+          const keyCode = parts.pop() ?? ''
+          const modifiers = parts.map((part) => (part === 'ctrl' ? 'control' : part)) as Array<'control' | 'shift' | 'alt' | 'meta'>
+          mainWindow.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
+          mainWindow.webContents.sendInputEvent({ type: 'char', keyCode, modifiers })
+          mainWindow.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers })
+          await new Promise((resolve) => setTimeout(resolve, 400))
+        }
       }
       const image = await mainWindow.webContents.capturePage()
       await fs.writeFile(capturePath, image.toPNG())
