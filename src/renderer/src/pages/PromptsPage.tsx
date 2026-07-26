@@ -9,6 +9,39 @@ import { dayLabel, timeLabel } from '../utils/dates'
 
 const emptyDraft: PromptDraft = { title: '', content: '' }
 
+// {{ 变量名 }} 占位符:复制时提取去重,弹填空框替换后才写剪贴板。
+const VARIABLE_PATTERN = /\{\{\s*([^{}]+?)\s*\}\}/g
+const VARIABLE_MEMORY_KEY = 'devcanopy-prompt-variables'
+
+function extractVariables(content: string): string[] {
+  const names: string[] = []
+  for (const match of content.matchAll(VARIABLE_PATTERN)) {
+    const name = match[1].trim()
+    if (!names.includes(name)) names.push(name)
+  }
+  return names
+}
+
+function fillVariables(content: string, values: Record<string, string>): string {
+  return content.replace(VARIABLE_PATTERN, (raw, name: string) => values[name.trim()] || raw)
+}
+
+function readRememberedValues(): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(VARIABLE_MEMORY_KEY) ?? '{}')
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, string> : {}
+  } catch {
+    return {}
+  }
+}
+
+interface VariableFillState {
+  content: string
+  copyKey: number | 'modal'
+  variables: string[]
+  values: Record<string, string>
+}
+
 export function PromptsPage() {
   const [prompts, setPrompts] = useState<PromptDoc[]>([])
   const [query, setQuery] = useState('')
@@ -18,6 +51,7 @@ export function PromptsPage() {
   const [importNotice, setImportNotice] = useState('')
   const [importHasFailures, setImportHasFailures] = useState(false)
   const copyTimerRef = useRef<number | null>(null)
+  const [fillState, setFillState] = useState<VariableFillState | null>(null)
   const dialog = useEditDialog<PromptDoc, PromptDraft>(emptyDraft)
 
   const load = useCallback(async () => {
@@ -53,6 +87,34 @@ export function PromptsPage() {
         copyTimerRef.current = window.setTimeout(() => setCopiedKey(null), 1_500)
       })
       .catch(() => setPageError('复制失败，请重试。'))
+  }
+
+  // 无占位符直接复制;有占位符先弹填空,用上次填过的值预填。
+  const requestCopy = (text: string, key: number | 'modal'): void => {
+    const variables = extractVariables(text)
+    if (variables.length === 0) {
+      copyText(text, key)
+      return
+    }
+    const remembered = readRememberedValues()
+    setFillState({
+      content: text,
+      copyKey: key,
+      variables,
+      values: Object.fromEntries(variables.map((name) => [name, remembered[name] ?? '']))
+    })
+  }
+
+  const confirmFill = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    if (!fillState) return
+    try {
+      window.localStorage.setItem(VARIABLE_MEMORY_KEY, JSON.stringify({ ...readRememberedValues(), ...fillState.values }))
+    } catch {
+      // 记忆上次填值失败不阻断复制。
+    }
+    copyText(fillVariables(fillState.content, fillState.values), fillState.copyKey)
+    setFillState(null)
   }
 
   const openEdit = (prompt: PromptDoc): void => {
@@ -146,13 +208,16 @@ export function PromptsPage() {
         {!loading && prompts.length > 0 && filtered.length === 0 ? (
           <div className="empty-state"><FileText size={30} /><h2>没有匹配的文档</h2><p>尝试更换搜索关键词。</p></div>
         ) : null}
-        {filtered.map((prompt) => (
+        {filtered.map((prompt) => {
+          const variableCount = extractVariables(prompt.content).length
+          return (
           <article className="prompt-row" key={prompt.id}>
             <div className="prompt-icon"><FileText size={18} /></div>
             <button className="prompt-open" type="button" onClick={() => openEdit(prompt)}>
               <div className="prompt-title-line">
                 <h2>{prompt.title}</h2>
                 <span className="char-tag">{prompt.content.length} 字符</span>
+                {variableCount > 0 ? <span className="char-tag variable-tag">{variableCount} 变量</span> : null}
               </div>
               {prompt.content ? <p className="prompt-excerpt">{prompt.content.replace(/\s+/g, ' ').slice(0, 160)}</p> : null}
               <div className="prompt-meta">更新于 {dayLabel(prompt.updatedAt)} {timeLabel(prompt.updatedAt)}</div>
@@ -160,7 +225,7 @@ export function PromptsPage() {
             <button
               className={`button ghost ${copiedKey === prompt.id ? 'is-copied' : ''}`}
               type="button"
-              onClick={() => copyText(prompt.content, prompt.id)}
+              onClick={() => requestCopy(prompt.content, prompt.id)}
             >
               {copiedKey === prompt.id ? <><Check size={15} /> 已复制</> : <><Copy size={15} /> 复制</>}
             </button>
@@ -171,7 +236,8 @@ export function PromptsPage() {
               <Trash2 size={16} />
             </button>
           </article>
-        ))}
+          )
+        })}
       </div>
 
       <Modal
@@ -186,7 +252,7 @@ export function PromptsPage() {
             className={`button ghost ${copiedKey === 'modal' ? 'is-copied' : ''}`}
             type="button"
             disabled={!dialog.draft.content}
-            onClick={() => copyText(dialog.draft.content, 'modal')}
+            onClick={() => requestCopy(dialog.draft.content, 'modal')}
           >
             {copiedKey === 'modal' ? <><Check size={15} /> 已复制</> : <><Copy size={15} /> 复制全文</>}
           </button>
@@ -209,6 +275,31 @@ export function PromptsPage() {
             />
           </label>
           {dialog.error ? <p className="form-error span-2" role="alert">{dialog.error}</p> : null}
+        </div>
+      </Modal>
+
+      <Modal
+        open={fillState !== null}
+        title="填写变量"
+        description="替换 {{ }} 占位符后复制，取消则不写入剪贴板。"
+        submitLabel="替换并复制"
+        onClose={() => setFillState(null)}
+        onSubmit={confirmFill}
+      >
+        <div className="form-grid">
+          {fillState?.variables.map((name, index) => (
+            <label className="field span-2" key={name}>
+              <span>{name}</span>
+              <input
+                autoFocus={index === 0}
+                value={fillState.values[name] ?? ''}
+                placeholder={`{{ ${name} }}`}
+                onChange={(event) => setFillState((current) => (
+                  current ? { ...current, values: { ...current.values, [name]: event.target.value } } : current
+                ))}
+              />
+            </label>
+          ))}
         </div>
       </Modal>
     </section>
