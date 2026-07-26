@@ -55,6 +55,10 @@ const api: DevCanopyApi = {
     list: () => ipcRenderer.invoke(IpcChannel.SkillsList),
     open: (skillPath: string) => ipcRenderer.invoke(IpcChannel.SkillsOpen, skillPath)
   },
+  backup: {
+    create: () => ipcRenderer.invoke(IpcChannel.BackupCreate),
+    openDir: () => ipcRenderer.invoke(IpcChannel.BackupOpenDir)
+  },
   app: {
     info: () => ipcRenderer.invoke(IpcChannel.AppInfo)
   }

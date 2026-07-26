@@ -148,6 +148,7 @@ export interface AppInfo {
   version: string
   databasePath: string
   skillsPath: string
+  backupsDir: string
   platform: string
 }
 
@@ -199,6 +200,10 @@ export interface DevCanopyApi {
   skills: {
     list: () => Promise<SkillInfo[]>
     open: (skillPath: string) => Promise<void>
+  }
+  backup: {
+    create: () => Promise<string | null>
+    openDir: () => Promise<void>
   }
   app: {
     info: () => Promise<AppInfo>

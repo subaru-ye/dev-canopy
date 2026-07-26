@@ -37,6 +37,8 @@ export const IpcChannel = {
   PromptsImportFiles: 'prompts:import-files',
   SkillsList: 'skills:list',
   SkillsOpen: 'skills:open',
+  BackupCreate: 'backup:create',
+  BackupOpenDir: 'backup:open-dir',
   AppInfo: 'app:info'
 } as const
 

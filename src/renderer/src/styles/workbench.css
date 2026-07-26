@@ -405,6 +405,20 @@
   white-space: nowrap;
 }
 
+.setting-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.setting-row .setting-detail-path {
+  display: block;
+  max-width: 420px;
+  margin-top: 5px;
+  text-align: left;
+}
+
 .settings-panel .setting-row {
   margin-top: 12px;
   background: color-mix(in srgb, var(--surface) 92%, transparent);

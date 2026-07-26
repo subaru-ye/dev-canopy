@@ -89,6 +89,11 @@ export class AppDatabase {
     this.db.close()
   }
 
+  // SQLite 在线 backup:WAL 模式下热备安全,连同未 checkpoint 的写入一起落盘。
+  async backup(destinationPath: string): Promise<void> {
+    await this.db.backup(destinationPath)
+  }
+
   // 版本化迁移:PRAGMA user_version 记录已执行到第几步,新库与老库都从自己的版本继续。
   // 迁移 0 是幂等基线(全部 IF NOT EXISTS);之后的结构变更(如 ALTER TABLE 加列)必须
   // 作为新数组项追加,禁止改动已发布的条目。

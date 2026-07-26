@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync, promises as fs } from 'node:fs'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
+import { runStartupBackup } from './backup'
 import { AppDatabase, copyDatabase } from './database'
 import { ProcessManager } from './process-manager'
 import { scanSkills } from './skills'
@@ -11,6 +12,7 @@ let database: AppDatabase
 let processManager: ProcessManager
 let mainWindow: BrowserWindow | null = null
 let databasePath = ''
+let backupsDir = ''
 
 const skillsPath = join(process.env.USERPROFILE ?? app.getPath('home'), '.codex', 'skills')
 
@@ -306,10 +308,30 @@ function registerIpc(): void {
     const error = await shell.openPath(skillPath)
     if (error) throw new Error(error)
   })
+  ipcMain.handle(IpcChannel.BackupCreate, async () => {
+    const options: Electron.SaveDialogOptions = {
+      title: '选择备份保存位置',
+      defaultPath: `devcanopy-${todayLocalDate()}.db`,
+      filters: [{ name: 'SQLite 数据库', extensions: ['db'] }]
+    }
+    const result = mainWindow
+      ? await dialog.showSaveDialog(mainWindow, options)
+      : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return null
+    await database.backup(result.filePath)
+    return result.filePath
+  })
+  ipcMain.handle(IpcChannel.BackupOpenDir, async () => {
+    await fs.mkdir(backupsDir, { recursive: true })
+    const error = await shell.openPath(backupsDir)
+    if (error) throw new Error(error)
+  })
+
   ipcMain.handle(IpcChannel.AppInfo, () => ({
     version: app.getVersion(),
     databasePath,
     skillsPath,
+    backupsDir,
     platform: process.platform
   }))
 }
@@ -318,6 +340,10 @@ app.whenReady().then(async () => {
   databasePath = await resolveDatabasePath()
   database = new AppDatabase(databasePath)
   database.pruneProcessRuns()
+  backupsDir = join(app.getPath('userData'), 'backups')
+  // 自动备份不阻塞窗口创建,失败只记日志(例如磁盘满),不影响应用可用。
+  void runStartupBackup((destination) => database.backup(destination), backupsDir, todayLocalDate())
+    .catch((error) => console.error('[backup] 启动自动备份失败。', error))
   processManager = new ProcessManager(database, (commandId, chunk) => {
     // 可选链防不住已销毁的窗口:destroyed 后访问 webContents 会抛异常并打崩主进程。
     if (!mainWindow || mainWindow.isDestroyed()) return
