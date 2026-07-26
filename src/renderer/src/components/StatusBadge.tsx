@@ -1,4 +1,4 @@
-import { AlertCircle, Circle, CircleCheck, LoaderCircle } from 'lucide-react'
+import { AlertCircle, Circle, LoaderCircle } from 'lucide-react'
 import type { RuntimeState } from '../../../shared/types'
 
 const labels: Record<RuntimeState, string> = {
@@ -11,13 +11,19 @@ const labels: Record<RuntimeState, string> = {
 }
 
 export function StatusBadge({ state }: { state: RuntimeState }) {
-  const Icon = state === 'running'
-    ? CircleCheck
-    : state === 'error' || state === 'unknown'
-      ? AlertCircle
-      : state === 'starting' || state === 'stopping'
-        ? LoaderCircle
-        : Circle
+  if (state === 'running') {
+    return (
+      <span className="status-badge running">
+        <span className="live-dot" aria-hidden="true" />
+        {labels.running}
+      </span>
+    )
+  }
+  const Icon = state === 'error' || state === 'unknown'
+    ? AlertCircle
+    : state === 'starting' || state === 'stopping'
+      ? LoaderCircle
+      : Circle
   return (
     <span className={`status-badge ${state}`}>
       <Icon size={14} className={state === 'starting' || state === 'stopping' ? 'spin' : undefined} />

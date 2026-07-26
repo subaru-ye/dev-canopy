@@ -4,7 +4,7 @@ import type { AppInfo } from '../../../shared/types'
 
 export function SettingsPage() {
   const [info, setInfo] = useState<AppInfo | null>(null)
-  useEffect(() => { void window.devdesk.app.info().then(setInfo) }, [])
+  useEffect(() => { void window.devcanopy.app.info().then(setInfo) }, [])
 
   return (
     <section className="page route-enter settings-page">
@@ -33,7 +33,7 @@ export function SettingsPage() {
         </div>
         <div className="setting-row">
           <Info size={19} />
-          <div><h2>DevDesk</h2><p>本地项目、进程、任务和 Skills 工作台。</p></div>
+          <div><h2>DevCanopy</h2><p>本地项目、进程、任务和 Skills 工作台。</p></div>
           <code>v{info?.version ?? '0.1.0'}</code>
         </div>
       </div>

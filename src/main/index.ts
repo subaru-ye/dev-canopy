@@ -1,14 +1,15 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync, promises as fs } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { AppDatabase } from './database'
 import { ProcessManager } from './process-manager'
 import { scanSkills } from './skills'
-import type { CommandDraft, ProjectDraft, TaskDraft } from '../shared/types'
+import type { CommandDraft, ProjectDraft, PromptDraft, PromptImportResult, TaskDraft } from '../shared/types'
 
 let database: AppDatabase
 let processManager: ProcessManager
 let mainWindow: BrowserWindow | null = null
+let databasePath = ''
 
 const skillsPath = join(process.env.USERPROFILE ?? app.getPath('home'), '.codex', 'skills')
 
@@ -18,7 +19,7 @@ function createWindow(): void {
     height: 860,
     minWidth: 980,
     minHeight: 680,
-    title: 'DevDesk',
+    title: 'DevCanopy',
     backgroundColor: '#101312',
     show: false,
     webPreferences: {
@@ -33,16 +34,23 @@ function createWindow(): void {
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedUrl) => {
     console.error(`[renderer:load] ${errorCode} ${errorDescription} ${validatedUrl}`)
   })
-  if (process.env.DEVDESK_CAPTURE_PATH) {
+  if (process.env.DEVCANOPY_CAPTURE_PATH) {
     mainWindow.webContents.on('console-message', (_event, level, message) => {
       if (level >= 2) console.error(`[renderer:${level}] ${message}`)
     })
   }
   mainWindow.webContents.once('did-finish-load', () => {
-    const capturePath = process.env.DEVDESK_CAPTURE_PATH
+    const capturePath = process.env.DEVCANOPY_CAPTURE_PATH
     if (!capturePath) return
     setTimeout(async () => {
       if (!mainWindow || mainWindow.isDestroyed()) return
+      const clickSelector = process.env.DEVCANOPY_CAPTURE_CLICK
+      if (clickSelector) {
+        await mainWindow.webContents
+          .executeJavaScript(`document.querySelector(${JSON.stringify(clickSelector)})?.click()`)
+          .catch(() => undefined)
+        await new Promise((resolve) => setTimeout(resolve, 600))
+      }
       const image = await mainWindow.webContents.capturePage()
       await fs.writeFile(capturePath, image.toPNG())
       app.quit()
@@ -53,10 +61,11 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  const captureRoute = process.env.DEVCANOPY_CAPTURE_ROUTE
   if (process.env.ELECTRON_RENDERER_URL) {
-    void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
+    void mainWindow.loadURL(`${process.env.ELECTRON_RENDERER_URL}${captureRoute ? `#${captureRoute}` : ''}`)
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'), captureRoute ? { hash: captureRoute } : undefined)
   }
 }
 
@@ -65,6 +74,14 @@ function detectPackageManager(projectPath: string): 'npm' | 'pnpm' | 'yarn' | 'b
   if (existsSync(join(projectPath, 'yarn.lock'))) return 'yarn'
   if (existsSync(join(projectPath, 'bun.lockb')) || existsSync(join(projectPath, 'bun.lock'))) return 'bun'
   return 'npm'
+}
+
+function resolveDatabasePath(): string {
+  const currentPath = join(app.getPath('userData'), 'devcanopy.db')
+  if (existsSync(currentPath)) return currentPath
+
+  const legacyPath = join(app.getPath('appData'), 'DevDesk', 'devdesk.db')
+  return existsSync(legacyPath) ? legacyPath : currentPath
 }
 
 async function inspectProjectFolder(projectPath: string) {
@@ -88,6 +105,48 @@ async function inspectProjectFolder(projectPath: string) {
       selected: likelyLongRunning.test(name)
     }))
   }
+}
+
+const REPORT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const PROMPT_IMPORT_MAX_BYTES = 2 * 1024 * 1024
+
+function todayLocalDate(): string {
+  const now = new Date()
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
+async function importPromptFiles(): Promise<PromptImportResult | null> {
+  const options: Electron.OpenDialogOptions = {
+    title: '选择要导入的 Markdown 文件',
+    filters: [{ name: 'Markdown / 文本', extensions: ['md', 'markdown', 'txt'] }],
+    properties: ['openFile', 'multiSelections']
+  }
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options)
+  if (result.canceled || result.filePaths.length === 0) return null
+
+  const drafts: PromptDraft[] = []
+  const failed: Array<{ file: string; reason: string }> = []
+  for (const filePath of result.filePaths) {
+    const fileName = basename(filePath)
+    try {
+      const stat = await fs.stat(filePath)
+      if (stat.size > PROMPT_IMPORT_MAX_BYTES) {
+        failed.push({ file: fileName, reason: '文件超过 2MB 限制' })
+        continue
+      }
+      let content = await fs.readFile(filePath, 'utf8')
+      if (content.charCodeAt(0) === 0xfeff) content = content.slice(1)
+      const title = fileName.replace(/\.[^.]+$/, '').trim() || '未命名记忆'
+      drafts.push({ title, content })
+    } catch (error) {
+      failed.push({ file: fileName, reason: error instanceof Error ? error.message : '读取失败' })
+    }
+  }
+  const imported = drafts.length > 0 ? database.importPrompts(drafts) : 0
+  return { imported, failed }
 }
 
 function registerIpc(): void {
@@ -156,24 +215,70 @@ function registerIpc(): void {
   })
   ipcMain.handle('tasks:update', (_event, taskId: number, draft: Partial<TaskDraft>) => database.updateTask(taskId, draft))
   ipcMain.handle('tasks:remove', (_event, taskId: number) => database.removeTask(taskId))
+  ipcMain.handle('tasks:notes:list', (_event, taskId: number) => database.listTaskNotes(taskId))
+  ipcMain.handle('tasks:notes:create', (_event, taskId: number, content: string) => {
+    if (!content.trim()) throw new Error('记录内容不能为空。')
+    return database.createTaskNote(taskId, content)
+  })
+  ipcMain.handle('tasks:notes:remove', (_event, noteId: number) => database.removeTaskNote(noteId))
+  ipcMain.handle('tasks:checklist:list', (_event, taskId: number) => database.listChecklistItems(taskId))
+  ipcMain.handle('tasks:checklist:create', (_event, taskId: number, title: string) => {
+    if (!title.trim()) throw new Error('子任务标题不能为空。')
+    return database.createChecklistItem(taskId, title)
+  })
+  ipcMain.handle('tasks:checklist:toggle', (_event, itemId: number, done: boolean) => database.toggleChecklistItem(itemId, done))
+  ipcMain.handle('tasks:checklist:remove', (_event, itemId: number) => database.removeChecklistItem(itemId))
+  ipcMain.handle('tasks:completed-between', (_event, startIso: string, endIso: string) =>
+    database.listTasksCompletedBetween(startIso, endIso))
+
+  ipcMain.handle('reports:get', (_event, reportDate: string) => {
+    if (!REPORT_DATE_PATTERN.test(reportDate)) throw new Error('日报日期格式不正确。')
+    return database.getDailyReport(reportDate)
+  })
+  ipcMain.handle('reports:save', (_event, reportDate: string, content: string) => {
+    if (!REPORT_DATE_PATTERN.test(reportDate)) throw new Error('日报日期格式不正确。')
+    if (reportDate > todayLocalDate()) throw new Error('不能填写未来日期的日报。')
+    if (!content.trim()) {
+      database.removeDailyReport(reportDate)
+      return null
+    }
+    return database.upsertDailyReport(reportDate, content)
+  })
+  ipcMain.handle('reports:dates', () => database.listDailyReportDates())
+
+  ipcMain.handle('prompts:list', () => database.listPrompts())
+  ipcMain.handle('prompts:create', (_event, draft: PromptDraft) => {
+    if (!draft.title.trim()) throw new Error('记忆标题不能为空。')
+    return database.createPrompt(draft)
+  })
+  ipcMain.handle('prompts:update', (_event, promptId: number, draft: PromptDraft) => {
+    if (!draft.title.trim()) throw new Error('记忆标题不能为空。')
+    return database.updatePrompt(promptId, draft)
+  })
+  ipcMain.handle('prompts:remove', (_event, promptId: number) => database.removePrompt(promptId))
+  ipcMain.handle('prompts:import-files', () => importPromptFiles())
 
   ipcMain.handle('skills:list', () => scanSkills(skillsPath))
   ipcMain.handle('skills:open', async (_event, skillPath: string) => {
-    const normalizedRoot = skillsPath.toLowerCase()
-    if (!skillPath.toLowerCase().startsWith(normalizedRoot)) throw new Error('Skill 路径不在 Codex Skills 目录中。')
+    const relativePath = relative(skillsPath, skillPath)
+    const outside = !relativePath
+      || relativePath === '..'
+      || relativePath.startsWith(`..${sep}`)
+      || isAbsolute(relativePath)
+    if (outside) throw new Error('Skill 路径不在 Codex Skills 目录中。')
     const error = await shell.openPath(skillPath)
     if (error) throw new Error(error)
   })
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
-    databasePath: join(app.getPath('userData'), 'devdesk.db'),
+    databasePath,
     skillsPath,
     platform: process.platform
   }))
 }
 
 app.whenReady().then(() => {
-  const databasePath = join(app.getPath('userData'), 'devdesk.db')
+  databasePath = resolveDatabasePath()
   database = new AppDatabase(databasePath)
   processManager = new ProcessManager(database, (commandId, chunk) => {
     mainWindow?.webContents.send('commands:log', { commandId, chunk })

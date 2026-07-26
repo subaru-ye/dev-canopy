@@ -1,26 +1,35 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CheckSquare2, FolderKanban, Settings, Sparkles, TerminalSquare } from 'lucide-react'
+import { Brain, CheckSquare2, FolderKanban, NotebookPen, Settings, Sparkles, TerminalSquare } from 'lucide-react'
 import type { Project } from '../../shared/types'
 import { ProjectsPage } from './pages/ProjectsPage'
+import { PromptsPage } from './pages/PromptsPage'
+import { ReportsPage } from './pages/ReportsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SkillsPage } from './pages/SkillsPage'
 import { TasksPage } from './pages/TasksPage'
 
-type Route = 'projects' | 'tasks' | 'skills' | 'settings'
+type Route = 'projects' | 'tasks' | 'reports' | 'prompts' | 'skills' | 'settings'
 
 const navigation = [
   { id: 'projects' as const, label: '项目', icon: FolderKanban },
   { id: 'tasks' as const, label: '任务', icon: CheckSquare2 },
+  { id: 'reports' as const, label: '日报', icon: NotebookPen },
+  { id: 'prompts' as const, label: '记忆', icon: Brain },
   { id: 'skills' as const, label: 'Skills', icon: Sparkles },
   { id: 'settings' as const, label: '设置', icon: Settings }
 ]
 
+function initialRoute(): Route {
+  const hash = window.location.hash.slice(1)
+  return navigation.some((item) => item.id === hash) ? hash as Route : 'projects'
+}
+
 export function App() {
-  const [route, setRoute] = useState<Route>('projects')
+  const [route, setRoute] = useState<Route>(initialRoute)
   const [projects, setProjects] = useState<Project[]>([])
 
   const reloadProjects = useCallback(async () => {
-    setProjects(await window.devdesk.projects.list())
+    setProjects(await window.devcanopy.projects.list())
   }, [])
 
   useEffect(() => { void reloadProjects() }, [reloadProjects])
@@ -30,7 +39,7 @@ export function App() {
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark"><TerminalSquare size={20} /></span>
-          <div><strong>DevDesk</strong><span>Local workspace</span></div>
+          <div><strong>DevCanopy</strong><span>Local workspace</span></div>
         </div>
         <nav className="main-nav" aria-label="主菜单">
           {navigation.map((item) => {
@@ -57,6 +66,8 @@ export function App() {
       <main className="main-content" tabIndex={-1}>
         {route === 'projects' ? <ProjectsPage projects={projects} reloadProjects={reloadProjects} /> : null}
         {route === 'tasks' ? <TasksPage projects={projects} /> : null}
+        {route === 'reports' ? <ReportsPage /> : null}
+        {route === 'prompts' ? <PromptsPage /> : null}
         {route === 'skills' ? <SkillsPage /> : null}
         {route === 'settings' ? <SettingsPage /> : null}
       </main>

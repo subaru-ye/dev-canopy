@@ -74,8 +74,8 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
   const loadCommands = useCallback(async () => {
     if (!selectedProject) return
     const [nextCommands, statuses] = await Promise.all([
-      window.devdesk.commands.list(selectedProject.id),
-      window.devdesk.commands.statuses(selectedProject.id)
+      window.devcanopy.commands.list(selectedProject.id),
+      window.devcanopy.commands.statuses(selectedProject.id)
     ])
     setCommands(nextCommands)
     setRuntimes(Object.fromEntries(statuses.map((runtime) => [runtime.commandId, runtime])))
@@ -88,7 +88,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
     return () => window.clearInterval(interval)
   }, [selectedProject, loadCommands])
 
-  useEffect(() => window.devdesk.commands.onLog(({ commandId, chunk }) => {
+  useEffect(() => window.devcanopy.commands.onLog(({ commandId, chunk }) => {
     if (logCommand?.id === commandId) setLogText((previous) => (previous + chunk).slice(-200_000))
   }), [logCommand])
 
@@ -97,10 +97,15 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
     [runtimes]
   )
 
+  const totals = useMemo(() => ({
+    commands: projects.reduce((sum, project) => sum + project.commandCount, 0),
+    tasks: projects.reduce((sum, project) => sum + project.taskCount, 0)
+  }), [projects])
+
   const beginImport = async (): Promise<void> => {
     setError('')
     try {
-      const result = await window.devdesk.projects.selectFolder()
+      const result = await window.devcanopy.projects.selectFolder()
       if (!result) return
       setInspection(result)
       setImportName(result.name)
@@ -123,7 +128,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
     setImportBusy(true)
     setError('')
     try {
-      const project = await window.devdesk.projects.create({
+      const project = await window.devcanopy.projects.create({
         name: importName,
         path: inspection.path,
         commands: inspection.scripts
@@ -145,8 +150,8 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
     if (!commandDraft) return
     setError('')
     try {
-      if (editingCommand) await window.devdesk.commands.update(editingCommand.id, commandDraft)
-      else await window.devdesk.commands.create(commandDraft)
+      if (editingCommand) await window.devcanopy.commands.update(editingCommand.id, commandDraft)
+      else await window.devcanopy.commands.create(commandDraft)
       setCommandDialog(false)
       setEditingCommand(null)
       await loadCommands()
@@ -162,12 +167,12 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
     try {
       let runtime: CommandRuntime
       if (action === 'restart') {
-        await window.devdesk.commands.stop(command.id)
-        runtime = await window.devdesk.commands.start(command.id)
+        await window.devcanopy.commands.stop(command.id)
+        runtime = await window.devcanopy.commands.start(command.id)
       } else {
         runtime = action === 'start'
-          ? await window.devdesk.commands.start(command.id)
-          : await window.devdesk.commands.stop(command.id)
+          ? await window.devcanopy.commands.start(command.id)
+          : await window.devcanopy.commands.stop(command.id)
       }
       setRuntimes((current) => ({ ...current, [command.id]: runtime }))
     } catch (reason) {
@@ -193,7 +198,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
 
   const openLogs = async (command: CommandConfig): Promise<void> => {
     setLogCommand(command)
-    setLogText(await window.devdesk.commands.logs(command.id))
+    setLogText(await window.devcanopy.commands.logs(command.id))
   }
 
   const editCommand = (command: CommandConfig): void => {
@@ -217,14 +222,14 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
       return
     }
     if (!window.confirm(`删除命令“${command.name}”？`)) return
-    await window.devdesk.commands.remove(command.id)
+    await window.devcanopy.commands.remove(command.id)
     await loadCommands()
     await reloadProjects()
   }
 
   const removeProject = async (): Promise<void> => {
-    if (!selectedProject || !window.confirm(`从 DevDesk 移除“${selectedProject.name}”？项目文件不会被删除。`)) return
-    await window.devdesk.projects.remove(selectedProject.id)
+    if (!selectedProject || !window.confirm(`从 DevCanopy 移除“${selectedProject.name}”？项目文件不会被删除。`)) return
+    await window.devcanopy.projects.remove(selectedProject.id)
     setSelectedProject(null)
     await reloadProjects()
   }
@@ -237,6 +242,13 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
             <p className="eyebrow">LOCAL PROJECTS</p>
             <h1>项目</h1>
             <p>导入本地目录，集中管理长期运行的开发命令。</p>
+            {projects.length > 0 ? (
+              <div className="page-stats">
+                <span><b>{projects.length}</b> 个项目</span>
+                <span><b>{totals.commands}</b> 条命令</span>
+                <span><b>{totals.tasks}</b> 项待办</span>
+              </div>
+            ) : null}
           </div>
           <button className="button primary" type="button" onClick={() => void beginImport()}>
             <FolderOpen size={17} /> 导入项目
@@ -249,27 +261,31 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
           <div className="empty-state project-empty">
             <Folder size={34} />
             <h2>从一个本地项目开始</h2>
-            <p>DevDesk 会读取 package.json，帮助你选择需要长期管理的开发命令。</p>
+            <p>DevCanopy 会读取 package.json，帮助你选择需要长期管理的开发命令。</p>
             <button className="button secondary" type="button" onClick={() => void beginImport()}>选择目录</button>
           </div>
         ) : (
-          <div className="project-list">
+          <div className="project-grid">
             {projects.map((project, index) => (
               <button
-                className="project-row"
+                className="project-card"
                 type="button"
                 key={project.id}
                 onClick={() => { setSelectedProject(project); setTab('commands'); setError('') }}
                 style={{ '--row-index': index } as React.CSSProperties}
               >
-                <span className="project-mark"><Folder size={19} /></span>
-                <span className="project-main">
-                  <strong>{project.name}</strong>
-                  <code>{project.path}</code>
+                <span className="project-card-top">
+                  <span className="project-mark"><Folder size={19} /></span>
+                  <span className="project-main">
+                    <strong>{project.name}</strong>
+                    <code>{project.path}</code>
+                  </span>
+                  <ChevronRight size={17} />
                 </span>
-                <span className="project-count"><b>{project.commandCount}</b> 条命令</span>
-                <span className="project-count"><b>{project.taskCount}</b> 项待办</span>
-                <ChevronRight size={18} />
+                <span className="project-card-stats">
+                  <span><b>{project.commandCount}</b> 条命令</span>
+                  <span><b>{project.taskCount}</b> 项待办</span>
+                </span>
               </button>
             ))}
           </div>
@@ -317,10 +333,13 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
           <div><h1>{selectedProject.name}</h1><code>{selectedProject.path}</code></div>
         </div>
         <div className="project-summary">
-          <span><b>{runningCount}</b> 正在运行</span>
+          <span className={runningCount > 0 ? 'summary-live' : undefined}>
+            {runningCount > 0 ? <span className="live-dot" aria-hidden="true" /> : null}
+            <b>{runningCount}</b> 正在运行
+          </span>
           <span><b>{commands.length}</b> 条命令</span>
         </div>
-        <button className="button ghost" type="button" onClick={() => void window.devdesk.projects.reveal(selectedProject.path)}><ExternalLink size={15} /> 打开目录</button>
+        <button className="button ghost" type="button" onClick={() => void window.devcanopy.projects.reveal(selectedProject.path)}><ExternalLink size={15} /> 打开目录</button>
       </header>
 
       <nav className="project-tabs" aria-label="项目页面">
@@ -334,7 +353,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
       {tab === 'commands' ? (
         <div className="project-workspace">
           <div className="workspace-heading">
-            <div><p className="eyebrow">SERVICES</p><h2>命令与进程</h2><p>每 5 秒识别 DevDesk 与外部终端启动的项目命令。</p></div>
+            <div><p className="eyebrow">SERVICES</p><h2>命令与进程</h2><p>每 5 秒识别 DevCanopy 与外部终端启动的项目命令。</p></div>
             <div className="button-group">
               <button className="button ghost" type="button" onClick={() => void runAll('start')} disabled={commands.length === 0}><Play size={15} /> 全部启动</button>
               <button className="button ghost" type="button" onClick={() => void runAll('stop')} disabled={runningCount === 0}><CircleStop size={15} /> 全部停止</button>
@@ -351,7 +370,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
                 const runtime = runtimes[command.id] ?? { commandId: command.id, state: 'unknown', pid: null, startedAt: null, source: null, detail: null }
                 const busy = actionIds.has(command.id)
                 return (
-                  <article className="command-row" key={command.id}>
+                  <article className={`command-row${runtime.state === 'running' ? ' is-running' : ''}`} key={command.id}>
                     <div className="command-copy"><strong>{command.name}</strong><code>{command.command}</code>{command.workingDirectory ? <span>cwd: {command.workingDirectory}</span> : null}</div>
                     <StatusBadge state={busy ? (runtime.state === 'running' ? 'stopping' : 'starting') : runtime.state} />
                     <div className="runtime-detail"><code>{runtime.pid ? `PID ${runtime.pid}` : runtime.detail ?? '—'}</code>{command.detectionType !== 'none' ? <span>{command.detectionType}: {command.detectionValue}</span> : null}</div>
@@ -379,9 +398,9 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
 
       {tab === 'settings' ? (
         <div className="project-workspace settings-panel">
-          <div className="workspace-heading"><div><p className="eyebrow">PROJECT SETTINGS</p><h2>项目设置</h2><p>DevDesk 只保存目录引用，不会修改或删除项目文件。</p></div></div>
+          <div className="workspace-heading"><div><p className="eyebrow">PROJECT SETTINGS</p><h2>项目设置</h2><p>DevCanopy 只保存目录引用，不会修改或删除项目文件。</p></div></div>
           <div className="setting-row"><FileCode2 size={19} /><div><h2>项目目录</h2><p>命令的默认工作目录。</p></div><code>{selectedProject.path}</code></div>
-          <div className="danger-zone"><div><h3>从 DevDesk 移除</h3><p>删除命令和项目任务记录，保留本地项目文件。</p></div><button className="button danger" type="button" onClick={() => void removeProject()}><Trash2 size={15} /> 移除项目</button></div>
+          <div className="danger-zone"><div><h3>从 DevCanopy 移除</h3><p>删除命令和项目任务记录，保留本地项目文件。</p></div><button className="button danger" type="button" onClick={() => void removeProject()}><Trash2 size={15} /> 移除项目</button></div>
         </div>
       ) : null}
 
@@ -400,7 +419,7 @@ export function ProjectsPage({ projects, reloadProjects }: ProjectsPageProps) {
       {logCommand ? (
         <aside className="log-panel" aria-label={`${logCommand.name} 日志`}>
           <header><div><span>LIVE LOG</span><strong>{logCommand.name}</strong></div><button className="icon-button" type="button" onClick={() => setLogCommand(null)} aria-label="关闭日志"><X size={18} /></button></header>
-          <pre>{logText || '暂无由 DevDesk 捕获的日志。外部终端启动的进程无法接管此前输出。'}</pre>
+          <pre>{logText || '暂无由 DevCanopy 捕获的日志。外部终端启动的进程无法接管此前输出。'}</pre>
         </aside>
       ) : null}
     </section>

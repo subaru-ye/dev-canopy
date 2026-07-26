@@ -8,6 +8,8 @@ interface ModalProps {
   children: ReactNode
   submitLabel?: string
   busy?: boolean
+  wide?: boolean
+  headerActions?: ReactNode
   onClose: () => void
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void
 }
@@ -19,6 +21,8 @@ export function Modal({
   children,
   submitLabel = '保存',
   busy = false,
+  wide = false,
+  headerActions,
   onClose,
   onSubmit
 }: ModalProps) {
@@ -40,9 +44,12 @@ export function Modal({
           <h2 id="modal-title">{title}</h2>
           {description ? <p>{description}</p> : null}
         </div>
-        <button className="icon-button" type="button" onClick={onClose} aria-label="关闭弹窗" disabled={busy}>
-          <X size={18} />
-        </button>
+        <div className="modal-header-actions">
+          {headerActions}
+          <button className="icon-button" type="button" onClick={onClose} aria-label="关闭弹窗" disabled={busy}>
+            <X size={18} />
+          </button>
+        </div>
       </header>
       <div className="modal-content">{children}</div>
       {onSubmit ? (
@@ -61,11 +68,11 @@ export function Modal({
       if (event.target === event.currentTarget && !busy) onClose()
     }}>
       {onSubmit ? (
-        <form className="modal" onSubmit={onSubmit} role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <form className={`modal${wide ? ' wide' : ''}`} onSubmit={onSubmit} role="dialog" aria-modal="true" aria-labelledby="modal-title">
           {content}
         </form>
       ) : (
-        <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <section className={`modal${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
           {content}
         </section>
       )}

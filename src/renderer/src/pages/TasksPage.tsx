@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Check, ChevronDown, ClipboardList, Edit3, Plus, Trash2 } from 'lucide-react'
 import type { Project, Task, TaskDraft, TaskPriority, TaskStatus } from '../../../shared/types'
 import { Modal } from '../components/Modal'
+import { TaskDetailModal } from '../components/TaskDetailModal'
 
 interface TasksPageProps {
   projects: Project[]
@@ -37,10 +38,13 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
   const [draft, setDraft] = useState<TaskDraft>({ ...emptyDraft, projectId: fixedProjectId ?? null })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [detailTask, setDetailTask] = useState<Task | null>(null)
+  const [showDone, setShowDone] = useState(false)
+  const returnToDetailRef = useRef<Task | null>(null)
 
   const load = useCallback(async () => {
     const projectFilter = fixedProjectId ?? (scope === 'all' ? undefined : scope === 'personal' ? null : Number(scope))
-    setTasks(await window.devdesk.tasks.list(projectFilter))
+    setTasks(await window.devcanopy.tasks.list(projectFilter))
   }, [fixedProjectId, scope])
 
   useEffect(() => { void load() }, [load])
@@ -49,6 +53,12 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
     active: tasks.filter((task) => task.status !== 'done').length,
     done: tasks.filter((task) => task.status === 'done').length
   }), [tasks])
+
+  const groups = useMemo(() => ([
+    { key: 'doing' as const, label: statusLabels.doing, items: tasks.filter((task) => task.status === 'doing'), collapsible: false },
+    { key: 'todo' as const, label: statusLabels.todo, items: tasks.filter((task) => task.status === 'todo'), collapsible: false },
+    { key: 'done' as const, label: statusLabels.done, items: tasks.filter((task) => task.status === 'done'), collapsible: true }
+  ]), [tasks])
 
   const openCreate = (): void => {
     setEditing(null)
@@ -71,6 +81,19 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
     setDialogOpen(true)
   }
 
+  const openEditFromDetail = (task: Task): void => {
+    returnToDetailRef.current = task
+    setDetailTask(null)
+    openEdit(task)
+  }
+
+  const closeEditDialog = (): void => {
+    setDialogOpen(false)
+    const back = returnToDetailRef.current
+    returnToDetailRef.current = null
+    if (back) setDetailTask(back)
+  }
+
   const saveTask = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     if (!draft.title.trim()) {
@@ -80,8 +103,15 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
     setBusy(true)
     setError('')
     try {
-      if (editing) await window.devdesk.tasks.update(editing.id, draft)
-      else await window.devdesk.tasks.create(draft)
+      if (editing) {
+        const updated = await window.devcanopy.tasks.update(editing.id, draft)
+        if (returnToDetailRef.current) {
+          returnToDetailRef.current = null
+          setDetailTask(updated)
+        }
+      } else {
+        await window.devcanopy.tasks.create(draft)
+      }
       setDialogOpen(false)
       await load()
     } catch (reason) {
@@ -92,15 +122,50 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
   }
 
   const setStatus = async (task: Task, status: TaskStatus): Promise<void> => {
-    await window.devdesk.tasks.update(task.id, { status })
+    await window.devcanopy.tasks.update(task.id, { status })
     await load()
   }
 
   const removeTask = async (task: Task): Promise<void> => {
-    if (!window.confirm(`删除任务“${task.title}”？`)) return
-    await window.devdesk.tasks.remove(task.id)
+    if (!window.confirm(`删除任务“${task.title}”？进展记录和子任务会一并删除。`)) return
+    await window.devcanopy.tasks.remove(task.id)
+    if (detailTask?.id === task.id) setDetailTask(null)
     await load()
   }
+
+  const renderTask = (task: Task) => (
+    <article className={`task-row ${task.status === 'done' ? 'is-done' : ''}`} key={task.id}>
+      <button
+        className="task-check"
+        type="button"
+        aria-label={task.status === 'done' ? '标记为待处理' : '标记为已完成'}
+        onClick={() => void setStatus(task, task.status === 'done' ? 'todo' : 'done')}
+      >
+        {task.status === 'done' ? <Check size={16} /> : null}
+      </button>
+      <button className="task-open" type="button" onClick={() => setDetailTask(task)}>
+        <div className="task-title-line">
+          <h3>{task.title}</h3>
+          <span className={`priority ${task.priority}`}>{priorityLabels[task.priority]}</span>
+        </div>
+        {task.description ? <p>{task.description}</p> : null}
+        <div className="task-meta">
+          <span>{task.projectName ?? '个人待办'}</span>
+          {task.checklistTotal > 0 ? <span className="progress-tag">{task.checklistDone}/{task.checklistTotal} 子任务</span> : null}
+          {task.noteCount > 0 ? <span>{task.noteCount} 条记录</span> : null}
+          {task.completionNote ? <span>完成说明：{task.completionNote}</span> : null}
+        </div>
+      </button>
+      <label className="inline-select">
+        <span className="sr-only">任务状态</span>
+        <select value={task.status} onChange={(event) => void setStatus(task, event.target.value as TaskStatus)}>
+          {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+      <button className="icon-button" type="button" onClick={() => openEdit(task)} aria-label={`编辑 ${task.title}`}><Edit3 size={16} /></button>
+      <button className="icon-button danger" type="button" onClick={() => void removeTask(task)} aria-label={`删除 ${task.title}`}><Trash2 size={16} /></button>
+    </article>
+  )
 
   return (
     <section className={fixedProjectId ? 'embedded-workspace' : 'page route-enter'}>
@@ -129,44 +194,36 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
         </div>
       ) : null}
 
-      <div className="task-list" aria-live="polite">
+      <div className="task-groups" aria-live="polite">
         {tasks.length === 0 ? (
-          <div className="empty-state">
-            <ClipboardList size={30} />
-            <h2>还没有任务</h2>
-            <p>{fixedProjectId ? '记录这个项目下一步要完成的事情。' : '把临时想法记下来，稍后再分配给项目。'}</p>
-            <button className="button secondary" type="button" onClick={openCreate}>创建第一项任务</button>
-          </div>
-        ) : tasks.map((task) => (
-          <article className={`task-row ${task.status === 'done' ? 'is-done' : ''}`} key={task.id}>
-            <button
-              className="task-check"
-              type="button"
-              aria-label={task.status === 'done' ? '标记为待处理' : '标记为已完成'}
-              onClick={() => void setStatus(task, task.status === 'done' ? 'todo' : 'done')}
-            >
-              {task.status === 'done' ? <Check size={16} /> : null}
-            </button>
-            <div className="task-copy">
-              <div className="task-title-line">
-                <h3>{task.title}</h3>
-                <span className={`priority ${task.priority}`}>{priorityLabels[task.priority]}</span>
-              </div>
-              {task.description ? <p>{task.description}</p> : null}
-              <div className="task-meta">
-                <span>{task.projectName ?? '个人待办'}</span>
-                {task.completionNote ? <span>完成说明：{task.completionNote}</span> : null}
-              </div>
+          <div className="task-list">
+            <div className="empty-state">
+              <ClipboardList size={30} />
+              <h2>还没有任务</h2>
+              <p>{fixedProjectId ? '记录这个项目下一步要完成的事情。' : '把临时想法记下来，稍后再分配给项目。'}</p>
+              <button className="button secondary" type="button" onClick={openCreate}>创建第一项任务</button>
             </div>
-            <label className="inline-select">
-              <span className="sr-only">任务状态</span>
-              <select value={task.status} onChange={(event) => void setStatus(task, event.target.value as TaskStatus)}>
-                {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </label>
-            <button className="icon-button" type="button" onClick={() => openEdit(task)} aria-label={`编辑 ${task.title}`}><Edit3 size={16} /></button>
-            <button className="icon-button danger" type="button" onClick={() => void removeTask(task)} aria-label={`删除 ${task.title}`}><Trash2 size={16} /></button>
-          </article>
+          </div>
+        ) : groups.map((group) => group.items.length === 0 ? null : (
+          <section className="task-group" key={group.key}>
+            <header className="task-group-head">
+              {group.collapsible ? (
+                <button type="button" onClick={() => setShowDone((current) => !current)} aria-expanded={showDone}>
+                  <ChevronDown size={14} className={showDone ? '' : 'collapsed'} />
+                  {group.label}
+                  <em>{group.items.length}</em>
+                </button>
+              ) : (
+                <span>
+                  {group.label}
+                  <em>{group.items.length}</em>
+                </span>
+              )}
+            </header>
+            {!group.collapsible || showDone ? (
+              <div className="task-list">{group.items.map(renderTask)}</div>
+            ) : null}
+          </section>
         ))}
       </div>
 
@@ -176,7 +233,7 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
         description="个人待办与项目需求使用同一套任务记录。"
         submitLabel={editing ? '保存修改' : '创建任务'}
         busy={busy}
-        onClose={() => setDialogOpen(false)}
+        onClose={closeEditDialog}
         onSubmit={(event) => void saveTask(event)}
       >
         <div className="form-grid">
@@ -216,6 +273,16 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
           {error ? <p className="form-error span-2" role="alert">{error}</p> : null}
         </div>
       </Modal>
+
+      {detailTask ? (
+        <TaskDetailModal
+          task={detailTask}
+          onClose={() => setDetailTask(null)}
+          onEdit={openEditFromDetail}
+          onTaskChange={(task) => { setDetailTask(task); void load() }}
+          onMutated={() => void load()}
+        />
+      ) : null}
     </section>
   )
 }

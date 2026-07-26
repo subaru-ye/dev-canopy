@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { CommandDraft, DevDeskApi, ProjectDraft, TaskDraft } from '../shared/types'
+import type { CommandDraft, DevCanopyApi, ProjectDraft, PromptDraft, TaskDraft } from '../shared/types'
 
-const api: DevDeskApi = {
+const api: DevCanopyApi = {
   projects: {
     list: () => ipcRenderer.invoke('projects:list'),
     selectFolder: () => ipcRenderer.invoke('projects:select-folder'),
@@ -28,7 +28,27 @@ const api: DevDeskApi = {
     list: (projectId?: number | null) => ipcRenderer.invoke('tasks:list', projectId),
     create: (draft: TaskDraft) => ipcRenderer.invoke('tasks:create', draft),
     update: (taskId: number, draft: Partial<TaskDraft>) => ipcRenderer.invoke('tasks:update', taskId, draft),
-    remove: (taskId: number) => ipcRenderer.invoke('tasks:remove', taskId)
+    remove: (taskId: number) => ipcRenderer.invoke('tasks:remove', taskId),
+    notes: (taskId: number) => ipcRenderer.invoke('tasks:notes:list', taskId),
+    addNote: (taskId: number, content: string) => ipcRenderer.invoke('tasks:notes:create', taskId, content),
+    removeNote: (noteId: number) => ipcRenderer.invoke('tasks:notes:remove', noteId),
+    checklist: (taskId: number) => ipcRenderer.invoke('tasks:checklist:list', taskId),
+    addChecklistItem: (taskId: number, title: string) => ipcRenderer.invoke('tasks:checklist:create', taskId, title),
+    toggleChecklistItem: (itemId: number, done: boolean) => ipcRenderer.invoke('tasks:checklist:toggle', itemId, done),
+    removeChecklistItem: (itemId: number) => ipcRenderer.invoke('tasks:checklist:remove', itemId),
+    completedBetween: (startIso: string, endIso: string) => ipcRenderer.invoke('tasks:completed-between', startIso, endIso)
+  },
+  reports: {
+    get: (reportDate: string) => ipcRenderer.invoke('reports:get', reportDate),
+    save: (reportDate: string, content: string) => ipcRenderer.invoke('reports:save', reportDate, content),
+    dates: () => ipcRenderer.invoke('reports:dates')
+  },
+  prompts: {
+    list: () => ipcRenderer.invoke('prompts:list'),
+    create: (draft: PromptDraft) => ipcRenderer.invoke('prompts:create', draft),
+    update: (promptId: number, draft: PromptDraft) => ipcRenderer.invoke('prompts:update', promptId, draft),
+    remove: (promptId: number) => ipcRenderer.invoke('prompts:remove', promptId),
+    importFiles: () => ipcRenderer.invoke('prompts:import-files')
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
@@ -39,4 +59,4 @@ const api: DevDeskApi = {
   }
 }
 
-contextBridge.exposeInMainWorld('devdesk', api)
+contextBridge.exposeInMainWorld('devcanopy', api)

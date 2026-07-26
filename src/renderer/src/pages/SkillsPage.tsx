@@ -8,7 +8,7 @@ export function SkillsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    window.devdesk.skills.list().then(setSkills).finally(() => setLoading(false))
+    window.devcanopy.skills.list().then(setSkills).finally(() => setLoading(false))
   }, [])
 
   const filtered = useMemo(() => {
@@ -61,7 +61,7 @@ export function SkillsPage() {
                 <code>{skill.path}</code>
               </div>
             </div>
-            <button className="button ghost" type="button" onClick={() => void window.devdesk.skills.open(skill.path)}>
+            <button className="button ghost" type="button" onClick={() => void window.devcanopy.skills.open(skill.path)}>
               <ExternalLink size={15} /> 打开目录
             </button>
           </article>

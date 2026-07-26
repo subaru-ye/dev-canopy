@@ -2,10 +2,15 @@ import Database from 'better-sqlite3'
 import type {
   CommandConfig,
   CommandDraft,
+  DailyReport,
   Project,
   ProjectDraft,
+  PromptDoc,
+  PromptDraft,
   Task,
-  TaskDraft
+  TaskChecklistItem,
+  TaskDraft,
+  TaskNote
 } from '../shared/types'
 
 export class AppDatabase {
@@ -66,9 +71,45 @@ export class AppDatabase {
         completed_at TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS task_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS task_checklist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS daily_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_date TEXT NOT NULL UNIQUE,
+        content TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS prompts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_commands_project ON commands(project_id);
       CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
       CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+      CREATE INDEX IF NOT EXISTS idx_tasks_completed_at ON tasks(completed_at);
+      CREATE INDEX IF NOT EXISTS idx_task_notes_task ON task_notes(task_id);
+      CREATE INDEX IF NOT EXISTS idx_task_checklist_task ON task_checklist(task_id);
+      CREATE INDEX IF NOT EXISTS idx_prompts_updated ON prompts(updated_at);
     `)
   }
 
@@ -278,7 +319,10 @@ export class AppDatabase {
         t.priority,
         t.completion_note AS completionNote,
         t.created_at AS createdAt,
-        t.completed_at AS completedAt
+        t.completed_at AS completedAt,
+        (SELECT COUNT(*) FROM task_notes n WHERE n.task_id = t.id) AS noteCount,
+        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id AND c.done = 1) AS checklistDone,
+        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id) AS checklistTotal
       FROM tasks t
       LEFT JOIN projects p ON p.id = t.project_id
       ${where}
@@ -301,7 +345,10 @@ export class AppDatabase {
         t.priority,
         t.completion_note AS completionNote,
         t.created_at AS createdAt,
-        t.completed_at AS completedAt
+        t.completed_at AS completedAt,
+        (SELECT COUNT(*) FROM task_notes n WHERE n.task_id = t.id) AS noteCount,
+        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id AND c.done = 1) AS checklistDone,
+        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id) AS checklistTotal
       FROM tasks t
       LEFT JOIN projects p ON p.id = t.project_id
       WHERE t.id = ?
@@ -363,5 +410,193 @@ export class AppDatabase {
 
   removeTask(taskId: number): void {
     this.db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId)
+  }
+
+  listTaskNotes(taskId: number): TaskNote[] {
+    return this.db.prepare(`
+      SELECT id, task_id AS taskId, content, created_at AS createdAt
+      FROM task_notes
+      WHERE task_id = ?
+      ORDER BY created_at DESC, id DESC
+    `).all(taskId) as TaskNote[]
+  }
+
+  createTaskNote(taskId: number, content: string): TaskNote {
+    const result = this.db.prepare(`
+      INSERT INTO task_notes (task_id, content, created_at)
+      VALUES (?, ?, ?)
+    `).run(taskId, content.trim(), new Date().toISOString())
+    return this.db.prepare(`
+      SELECT id, task_id AS taskId, content, created_at AS createdAt
+      FROM task_notes WHERE id = ?
+    `).get(Number(result.lastInsertRowid)) as TaskNote
+  }
+
+  removeTaskNote(noteId: number): void {
+    this.db.prepare('DELETE FROM task_notes WHERE id = ?').run(noteId)
+  }
+
+  private readChecklistItem(itemId: number): TaskChecklistItem {
+    const row = this.db.prepare(`
+      SELECT id, task_id AS taskId, title, done, sort_order AS sortOrder, created_at AS createdAt
+      FROM task_checklist WHERE id = ?
+    `).get(itemId) as (Omit<TaskChecklistItem, 'done'> & { done: number }) | undefined
+    if (!row) throw new Error('子任务不存在。')
+    return { ...row, done: row.done === 1 }
+  }
+
+  listChecklistItems(taskId: number): TaskChecklistItem[] {
+    const rows = this.db.prepare(`
+      SELECT id, task_id AS taskId, title, done, sort_order AS sortOrder, created_at AS createdAt
+      FROM task_checklist
+      WHERE task_id = ?
+      ORDER BY sort_order ASC, id ASC
+    `).all(taskId) as Array<Omit<TaskChecklistItem, 'done'> & { done: number }>
+    return rows.map((row) => ({ ...row, done: row.done === 1 }))
+  }
+
+  createChecklistItem(taskId: number, title: string): TaskChecklistItem {
+    const nextOrder = this.db.prepare(`
+      SELECT COALESCE(MAX(sort_order), -1) + 1 AS nextOrder
+      FROM task_checklist WHERE task_id = ?
+    `).get(taskId) as { nextOrder: number }
+    const result = this.db.prepare(`
+      INSERT INTO task_checklist (task_id, title, done, sort_order, created_at)
+      VALUES (?, ?, 0, ?, ?)
+    `).run(taskId, title.trim(), nextOrder.nextOrder, new Date().toISOString())
+    return this.readChecklistItem(Number(result.lastInsertRowid))
+  }
+
+  toggleChecklistItem(itemId: number, done: boolean): TaskChecklistItem {
+    this.db.prepare('UPDATE task_checklist SET done = ? WHERE id = ?').run(done ? 1 : 0, itemId)
+    return this.readChecklistItem(itemId)
+  }
+
+  removeChecklistItem(itemId: number): void {
+    this.db.prepare('DELETE FROM task_checklist WHERE id = ?').run(itemId)
+  }
+
+  listTasksCompletedBetween(startIso: string, endIso: string): Task[] {
+    return this.db.prepare(`
+      SELECT
+        t.id,
+        t.project_id AS projectId,
+        p.name AS projectName,
+        t.title,
+        t.description,
+        t.status,
+        t.priority,
+        t.completion_note AS completionNote,
+        t.created_at AS createdAt,
+        t.completed_at AS completedAt,
+        (SELECT COUNT(*) FROM task_notes n WHERE n.task_id = t.id) AS noteCount,
+        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id AND c.done = 1) AS checklistDone,
+        (SELECT COUNT(*) FROM task_checklist c WHERE c.task_id = t.id) AS checklistTotal
+      FROM tasks t
+      LEFT JOIN projects p ON p.id = t.project_id
+      WHERE t.status = 'done' AND t.completed_at >= ? AND t.completed_at < ?
+      ORDER BY t.completed_at ASC
+    `).all(startIso, endIso) as Task[]
+  }
+
+  getDailyReport(reportDate: string): DailyReport | null {
+    return (this.db.prepare(`
+      SELECT id, report_date AS reportDate, content, created_at AS createdAt, updated_at AS updatedAt
+      FROM daily_reports WHERE report_date = ?
+    `).get(reportDate) as DailyReport | undefined) ?? null
+  }
+
+  upsertDailyReport(reportDate: string, content: string): DailyReport {
+    const now = new Date().toISOString()
+    this.db.prepare(`
+      INSERT INTO daily_reports (report_date, content, created_at, updated_at)
+      VALUES (@reportDate, @content, @now, @now)
+      ON CONFLICT(report_date) DO UPDATE SET
+        content = excluded.content,
+        updated_at = excluded.updated_at
+    `).run({ reportDate, content, now })
+    const report = this.getDailyReport(reportDate)
+    if (!report) throw new Error('保存日报后无法读取日报。')
+    return report
+  }
+
+  removeDailyReport(reportDate: string): void {
+    this.db.prepare('DELETE FROM daily_reports WHERE report_date = ?').run(reportDate)
+  }
+
+  listDailyReportDates(): string[] {
+    const rows = this.db.prepare(`
+      SELECT report_date AS reportDate FROM daily_reports ORDER BY report_date DESC
+    `).all() as Array<{ reportDate: string }>
+    return rows.map((row) => row.reportDate)
+  }
+
+  listPrompts(): PromptDoc[] {
+    return this.db.prepare(`
+      SELECT id, title, content, created_at AS createdAt, updated_at AS updatedAt
+      FROM prompts
+      ORDER BY updated_at DESC, id DESC
+    `).all() as PromptDoc[]
+  }
+
+  getPrompt(promptId: number): PromptDoc | null {
+    return (this.db.prepare(`
+      SELECT id, title, content, created_at AS createdAt, updated_at AS updatedAt
+      FROM prompts WHERE id = ?
+    `).get(promptId) as PromptDoc | undefined) ?? null
+  }
+
+  createPrompt(draft: PromptDraft): PromptDoc {
+    const now = new Date().toISOString()
+    const result = this.db.prepare(`
+      INSERT INTO prompts (title, content, created_at, updated_at)
+      VALUES (@title, @content, @createdAt, @updatedAt)
+    `).run({
+      title: draft.title.trim(),
+      content: draft.content,
+      createdAt: now,
+      updatedAt: now
+    })
+    const prompt = this.getPrompt(Number(result.lastInsertRowid))
+    if (!prompt) throw new Error('创建 Prompt 后无法读取。')
+    return prompt
+  }
+
+  updatePrompt(promptId: number, draft: PromptDraft): PromptDoc {
+    this.db.prepare(`
+      UPDATE prompts SET title = @title, content = @content, updated_at = @updatedAt
+      WHERE id = @id
+    `).run({
+      id: promptId,
+      title: draft.title.trim(),
+      content: draft.content,
+      updatedAt: new Date().toISOString()
+    })
+    const prompt = this.getPrompt(promptId)
+    if (!prompt) throw new Error('更新 Prompt 后无法读取。')
+    return prompt
+  }
+
+  removePrompt(promptId: number): void {
+    this.db.prepare('DELETE FROM prompts WHERE id = ?').run(promptId)
+  }
+
+  importPrompts(drafts: PromptDraft[]): number {
+    const now = new Date().toISOString()
+    const insert = this.db.prepare(`
+      INSERT INTO prompts (title, content, created_at, updated_at)
+      VALUES (@title, @content, @createdAt, @updatedAt)
+    `)
+    this.db.transaction(() => {
+      for (const draft of drafts) {
+        insert.run({
+          title: draft.title.trim() || '未命名记忆',
+          content: draft.content,
+          createdAt: now,
+          updatedAt: now
+        })
+      }
+    })()
+    return drafts.length
   }
 }
