@@ -20,10 +20,13 @@ interface ManagedProcess {
 }
 
 export class ProcessManager {
+  private static readonly SNAPSHOT_TTL_MS = 4_000
+
   private readonly managed = new Map<number, ManagedProcess>()
   private readonly logs = new Map<number, string>()
   private readonly lastErrors = new Map<number, string>()
   private processSnapshotInFlight: Promise<ProcessSnapshot[]> | null = null
+  private processSnapshotCache: { takenAt: number; processes: ProcessSnapshot[] } | null = null
 
   constructor(
     private readonly database: AppDatabase,
@@ -67,13 +70,13 @@ export class ProcessManager {
     child.stderr.on('data', append)
     child.on('error', (error) => {
       this.lastErrors.set(command.id, error.message)
-      append(Buffer.from(`\n[DevDesk] ${error.message}\n`, 'utf8'))
+      append(Buffer.from(`\n[DevCanopy] ${error.message}\n`, 'utf8'))
     })
     child.on('exit', (code) => {
       this.database.finishProcessRun(runId, code)
       this.managed.delete(command.id)
       if (code !== 0 && code !== null) this.lastErrors.set(command.id, `进程退出码：${code}`)
-      this.emitLog(command.id, `\n[DevDesk] 进程已退出，退出码 ${code ?? 'unknown'}。\n`)
+      this.emitLog(command.id, `\n[DevCanopy] 进程已退出，退出码 ${code ?? 'unknown'}。\n`)
     })
 
     return {
@@ -179,6 +182,8 @@ export class ProcessManager {
   }
 
   private async getWindowsProcessSnapshot(): Promise<ProcessSnapshot[]> {
+    const cached = this.processSnapshotCache
+    if (cached && Date.now() - cached.takenAt < ProcessManager.SNAPSHOT_TTL_MS) return cached.processes
     if (this.processSnapshotInFlight) return this.processSnapshotInFlight
 
     const script = 'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,CreationDate | ConvertTo-Json -Compress'
@@ -187,7 +192,11 @@ export class ProcessManager {
       ['-NoProfile', '-Command', script],
       { timeout: 4_000, maxBuffer: 5 * 1024 * 1024 }
     )
-      .then(({ stdout }) => parseWindowsProcessSnapshot(stdout))
+      .then(({ stdout }) => {
+        const processes = parseWindowsProcessSnapshot(stdout)
+        this.processSnapshotCache = { takenAt: Date.now(), processes }
+        return processes
+      })
       .catch(() => [])
       .finally(() => {
         this.processSnapshotInFlight = null
@@ -247,14 +256,19 @@ export class ProcessManager {
   }
 
   private async killTree(pid: number): Promise<void> {
-    if (process.platform === 'win32') {
-      await execFileAsync('taskkill.exe', ['/pid', String(pid), '/T', '/F'], { timeout: 8_000 })
-      return
-    }
     try {
-      process.kill(-pid, 'SIGTERM')
-    } catch {
-      process.kill(pid, 'SIGTERM')
+      if (process.platform === 'win32') {
+        await execFileAsync('taskkill.exe', ['/pid', String(pid), '/T', '/F'], { timeout: 8_000 })
+        return
+      }
+      try {
+        process.kill(-pid, 'SIGTERM')
+      } catch {
+        process.kill(pid, 'SIGTERM')
+      }
+    } finally {
+      // 进程树已变化,丢弃快照缓存,避免刚停止的命令在 TTL 内仍被识别为运行中。
+      this.processSnapshotCache = null
     }
   }
 }
