@@ -1,0 +1,183 @@
+/* 日报:按日归档的正文与当日成果,历史列表作时间锚点。 */
+.report-toolbar {
+  gap: 10px;
+}
+
+.report-save-state {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.report-save-state.is-error {
+  color: var(--danger);
+}
+
+.report-date-input {
+  height: 40px;
+  padding: 0 11px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  transition: border-color 140ms ease;
+}
+
+.report-date-input:focus {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.report-date-input::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
+  filter: invert(1);
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: light) {
+  .report-date-input::-webkit-calendar-picker-indicator {
+    filter: none;
+  }
+}
+
+.report-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 16px;
+  align-items: start;
+}
+
+.report-main {
+  display: grid;
+  gap: 16px;
+}
+
+.report-panel-head {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 14px 20px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.report-panel-head em {
+  padding: 1px 7px;
+  font-size: 11px;
+  font-style: normal;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.report-editor:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.report-textarea {
+  width: 100%;
+  min-height: 280px;
+  padding: 4px 20px 18px;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.7;
+  background: transparent;
+  border: 0;
+  resize: vertical;
+}
+
+.report-textarea:focus {
+  outline: 0;
+}
+
+.report-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.report-done {
+  padding-bottom: 8px;
+}
+
+.report-done-empty,
+.report-history-empty {
+  padding: 4px 20px 18px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.report-task-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 10px 20px;
+  border-top: 1px solid var(--line);
+}
+
+.report-task-row h3 {
+  font-size: 13.5px;
+}
+
+.report-task-check {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: 7px;
+}
+
+.report-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.report-history {
+  max-height: 72vh;
+  padding-bottom: 8px;
+  overflow-y: auto;
+}
+
+.report-history-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 20px;
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: 12px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.report-history-item:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.report-history-item.is-active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.report-history-item em {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.report-history-item.is-active em {
+  color: inherit;
+}

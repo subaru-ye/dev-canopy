@@ -4,6 +4,7 @@ import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { AppDatabase, copyDatabase } from './database'
 import { ProcessManager } from './process-manager'
 import { scanSkills } from './skills'
+import { IpcChannel } from '../shared/ipc'
 import type { CommandDraft, ProjectDraft, PromptDraft, PromptImportResult, TaskDraft, TaskPriority, TaskStatus } from '../shared/types'
 
 let database: AppDatabase
@@ -174,8 +175,8 @@ async function importPromptFiles(): Promise<PromptImportResult | null> {
 }
 
 function registerIpc(): void {
-  ipcMain.handle('projects:list', () => database.listProjects())
-  ipcMain.handle('projects:select-folder', async () => {
+  ipcMain.handle(IpcChannel.ProjectsList, () => database.listProjects())
+  ipcMain.handle(IpcChannel.ProjectsSelectFolder, async () => {
     const options: Electron.OpenDialogOptions = {
       title: '选择项目目录',
       properties: ['openDirectory']
@@ -186,92 +187,92 @@ function registerIpc(): void {
     if (result.canceled || !result.filePaths[0]) return null
     return inspectProjectFolder(result.filePaths[0])
   })
-  ipcMain.handle('projects:create', (_event, draft: ProjectDraft) => {
+  ipcMain.handle(IpcChannel.ProjectsCreate, (_event, draft: ProjectDraft) => {
     if (!draft.name.trim()) throw new Error('项目名称不能为空。')
     if (!existsSync(draft.path)) throw new Error('项目目录不存在。')
     return database.createProject(draft)
   })
-  ipcMain.handle('projects:remove', async (_event, projectId: number) => {
+  ipcMain.handle(IpcChannel.ProjectsRemove, async (_event, projectId: number) => {
     const commands = database.listCommands(projectId)
     await Promise.allSettled(commands.map((command) => processManager.stopManaged(command.id)))
     database.removeProject(projectId)
   })
-  ipcMain.handle('projects:reveal', async (_event, projectPath: string) => {
+  ipcMain.handle(IpcChannel.ProjectsReveal, async (_event, projectPath: string) => {
     const error = await shell.openPath(projectPath)
     if (error) throw new Error(error)
   })
 
-  ipcMain.handle('commands:list', (_event, projectId: number) => {
+  ipcMain.handle(IpcChannel.CommandsList, (_event, projectId: number) => {
     database.touchProject(projectId)
     return database.listCommands(projectId)
   })
-  ipcMain.handle('commands:create', (_event, draft: CommandDraft) => {
+  ipcMain.handle(IpcChannel.CommandsCreate, (_event, draft: CommandDraft) => {
     if (!draft.name.trim() || !draft.command.trim()) throw new Error('名称和命令不能为空。')
     return database.createCommand(draft)
   })
-  ipcMain.handle('commands:update', (_event, commandId: number, draft: CommandDraft) => {
+  ipcMain.handle(IpcChannel.CommandsUpdate, (_event, commandId: number, draft: CommandDraft) => {
     if (!draft.name.trim() || !draft.command.trim()) throw new Error('名称和命令不能为空。')
     return database.updateCommand(commandId, draft)
   })
-  ipcMain.handle('commands:remove', async (_event, commandId: number) => {
+  ipcMain.handle(IpcChannel.CommandsRemove, async (_event, commandId: number) => {
     await processManager.stopManaged(commandId)
     database.removeCommand(commandId)
   })
-  ipcMain.handle('commands:start', async (_event, commandId: number) => {
+  ipcMain.handle(IpcChannel.CommandsStart, async (_event, commandId: number) => {
     const command = database.getCommand(commandId)
     if (!command) throw new Error('命令不存在。')
     const project = database.getProject(command.projectId)
     if (!project) throw new Error('项目不存在。')
     return processManager.start(command, project)
   })
-  ipcMain.handle('commands:stop', async (_event, commandId: number) => {
+  ipcMain.handle(IpcChannel.CommandsStop, async (_event, commandId: number) => {
     const command = database.getCommand(commandId)
     if (!command) throw new Error('命令不存在。')
     const project = database.getProject(command.projectId)
     if (!project) throw new Error('项目不存在。')
     return processManager.stop(command, project)
   })
-  ipcMain.handle('commands:statuses', async (_event, projectId: number) => {
+  ipcMain.handle(IpcChannel.CommandsStatuses, async (_event, projectId: number) => {
     const project = database.getProject(projectId)
     if (!project) throw new Error('项目不存在。')
     const commands = database.listCommands(projectId)
     return Promise.all(commands.map((command) => processManager.status(command, project)))
   })
-  ipcMain.handle('commands:logs', (_event, commandId: number) => processManager.getLogs(commandId))
+  ipcMain.handle(IpcChannel.CommandsLogs, (_event, commandId: number) => processManager.getLogs(commandId))
 
-  ipcMain.handle('tasks:list', (_event, projectId?: number | null) => database.listTasks(projectId))
-  ipcMain.handle('tasks:create', (_event, draft: TaskDraft) => {
+  ipcMain.handle(IpcChannel.TasksList, (_event, projectId?: number | null) => database.listTasks(projectId))
+  ipcMain.handle(IpcChannel.TasksCreate, (_event, draft: TaskDraft) => {
     if (!draft.title.trim()) throw new Error('任务标题不能为空。')
     return database.createTask(draft)
   })
-  ipcMain.handle('tasks:update', (_event, taskId: number, draft: Partial<TaskDraft>) => {
+  ipcMain.handle(IpcChannel.TasksUpdate, (_event, taskId: number, draft: Partial<TaskDraft>) => {
     if (draft.title !== undefined && !draft.title.trim()) throw new Error('任务标题不能为空。')
     if (draft.status !== undefined && !TASK_STATUSES.includes(draft.status)) throw new Error('任务状态无效。')
     if (draft.priority !== undefined && !TASK_PRIORITIES.includes(draft.priority)) throw new Error('任务优先级无效。')
     return database.updateTask(taskId, draft)
   })
-  ipcMain.handle('tasks:remove', (_event, taskId: number) => database.removeTask(taskId))
-  ipcMain.handle('tasks:notes:list', (_event, taskId: number) => database.listTaskNotes(taskId))
-  ipcMain.handle('tasks:notes:create', (_event, taskId: number, content: string) => {
+  ipcMain.handle(IpcChannel.TasksRemove, (_event, taskId: number) => database.removeTask(taskId))
+  ipcMain.handle(IpcChannel.TaskNotesList, (_event, taskId: number) => database.listTaskNotes(taskId))
+  ipcMain.handle(IpcChannel.TaskNotesCreate, (_event, taskId: number, content: string) => {
     if (!content.trim()) throw new Error('记录内容不能为空。')
     return database.createTaskNote(taskId, content)
   })
-  ipcMain.handle('tasks:notes:remove', (_event, noteId: number) => database.removeTaskNote(noteId))
-  ipcMain.handle('tasks:checklist:list', (_event, taskId: number) => database.listChecklistItems(taskId))
-  ipcMain.handle('tasks:checklist:create', (_event, taskId: number, title: string) => {
+  ipcMain.handle(IpcChannel.TaskNotesRemove, (_event, noteId: number) => database.removeTaskNote(noteId))
+  ipcMain.handle(IpcChannel.TaskChecklistList, (_event, taskId: number) => database.listChecklistItems(taskId))
+  ipcMain.handle(IpcChannel.TaskChecklistCreate, (_event, taskId: number, title: string) => {
     if (!title.trim()) throw new Error('子任务标题不能为空。')
     return database.createChecklistItem(taskId, title)
   })
-  ipcMain.handle('tasks:checklist:toggle', (_event, itemId: number, done: boolean) => database.toggleChecklistItem(itemId, done))
-  ipcMain.handle('tasks:checklist:remove', (_event, itemId: number) => database.removeChecklistItem(itemId))
-  ipcMain.handle('tasks:completed-between', (_event, startIso: string, endIso: string) =>
+  ipcMain.handle(IpcChannel.TaskChecklistToggle, (_event, itemId: number, done: boolean) => database.toggleChecklistItem(itemId, done))
+  ipcMain.handle(IpcChannel.TaskChecklistRemove, (_event, itemId: number) => database.removeChecklistItem(itemId))
+  ipcMain.handle(IpcChannel.TasksCompletedBetween, (_event, startIso: string, endIso: string) =>
     database.listTasksCompletedBetween(startIso, endIso))
 
-  ipcMain.handle('reports:get', (_event, reportDate: string) => {
+  ipcMain.handle(IpcChannel.ReportsGet, (_event, reportDate: string) => {
     if (!REPORT_DATE_PATTERN.test(reportDate)) throw new Error('日报日期格式不正确。')
     return database.getDailyReport(reportDate)
   })
-  ipcMain.handle('reports:save', (_event, reportDate: string, content: string) => {
+  ipcMain.handle(IpcChannel.ReportsSave, (_event, reportDate: string, content: string) => {
     if (!REPORT_DATE_PATTERN.test(reportDate)) throw new Error('日报日期格式不正确。')
     if (reportDate > todayLocalDate()) throw new Error('不能填写未来日期的日报。')
     if (!content.trim()) {
@@ -280,22 +281,22 @@ function registerIpc(): void {
     }
     return database.upsertDailyReport(reportDate, content)
   })
-  ipcMain.handle('reports:dates', () => database.listDailyReportDates())
+  ipcMain.handle(IpcChannel.ReportsDates, () => database.listDailyReportDates())
 
-  ipcMain.handle('prompts:list', () => database.listPrompts())
-  ipcMain.handle('prompts:create', (_event, draft: PromptDraft) => {
+  ipcMain.handle(IpcChannel.PromptsList, () => database.listPrompts())
+  ipcMain.handle(IpcChannel.PromptsCreate, (_event, draft: PromptDraft) => {
     if (!draft.title.trim()) throw new Error('记忆标题不能为空。')
     return database.createPrompt(draft)
   })
-  ipcMain.handle('prompts:update', (_event, promptId: number, draft: PromptDraft) => {
+  ipcMain.handle(IpcChannel.PromptsUpdate, (_event, promptId: number, draft: PromptDraft) => {
     if (!draft.title.trim()) throw new Error('记忆标题不能为空。')
     return database.updatePrompt(promptId, draft)
   })
-  ipcMain.handle('prompts:remove', (_event, promptId: number) => database.removePrompt(promptId))
-  ipcMain.handle('prompts:import-files', () => importPromptFiles())
+  ipcMain.handle(IpcChannel.PromptsRemove, (_event, promptId: number) => database.removePrompt(promptId))
+  ipcMain.handle(IpcChannel.PromptsImportFiles, () => importPromptFiles())
 
-  ipcMain.handle('skills:list', () => scanSkills(skillsPath))
-  ipcMain.handle('skills:open', async (_event, skillPath: string) => {
+  ipcMain.handle(IpcChannel.SkillsList, () => scanSkills(skillsPath))
+  ipcMain.handle(IpcChannel.SkillsOpen, async (_event, skillPath: string) => {
     const relativePath = relative(skillsPath, skillPath)
     const outside = !relativePath
       || relativePath === '..'
@@ -305,7 +306,7 @@ function registerIpc(): void {
     const error = await shell.openPath(skillPath)
     if (error) throw new Error(error)
   })
-  ipcMain.handle('app:info', () => ({
+  ipcMain.handle(IpcChannel.AppInfo, () => ({
     version: app.getVersion(),
     databasePath,
     skillsPath,
@@ -320,7 +321,7 @@ app.whenReady().then(async () => {
   processManager = new ProcessManager(database, (commandId, chunk) => {
     // 可选链防不住已销毁的窗口:destroyed 后访问 webContents 会抛异常并打崩主进程。
     if (!mainWindow || mainWindow.isDestroyed()) return
-    mainWindow.webContents.send('commands:log', { commandId, chunk })
+    mainWindow.webContents.send(IpcChannel.CommandsLogEvent, { commandId, chunk })
   })
   registerIpc()
   createWindow()

@@ -1,61 +1,62 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { IpcChannel } from '../shared/ipc'
 import type { CommandDraft, DevCanopyApi, ProjectDraft, PromptDraft, TaskDraft } from '../shared/types'
 
 const api: DevCanopyApi = {
   projects: {
-    list: () => ipcRenderer.invoke('projects:list'),
-    selectFolder: () => ipcRenderer.invoke('projects:select-folder'),
-    create: (draft: ProjectDraft) => ipcRenderer.invoke('projects:create', draft),
-    remove: (projectId: number) => ipcRenderer.invoke('projects:remove', projectId),
-    reveal: (projectPath: string) => ipcRenderer.invoke('projects:reveal', projectPath)
+    list: () => ipcRenderer.invoke(IpcChannel.ProjectsList),
+    selectFolder: () => ipcRenderer.invoke(IpcChannel.ProjectsSelectFolder),
+    create: (draft: ProjectDraft) => ipcRenderer.invoke(IpcChannel.ProjectsCreate, draft),
+    remove: (projectId: number) => ipcRenderer.invoke(IpcChannel.ProjectsRemove, projectId),
+    reveal: (projectPath: string) => ipcRenderer.invoke(IpcChannel.ProjectsReveal, projectPath)
   },
   commands: {
-    list: (projectId: number) => ipcRenderer.invoke('commands:list', projectId),
-    create: (draft: CommandDraft) => ipcRenderer.invoke('commands:create', draft),
-    update: (commandId: number, draft: CommandDraft) => ipcRenderer.invoke('commands:update', commandId, draft),
-    remove: (commandId: number) => ipcRenderer.invoke('commands:remove', commandId),
-    start: (commandId: number) => ipcRenderer.invoke('commands:start', commandId),
-    stop: (commandId: number) => ipcRenderer.invoke('commands:stop', commandId),
-    statuses: (projectId: number) => ipcRenderer.invoke('commands:statuses', projectId),
-    logs: (commandId: number) => ipcRenderer.invoke('commands:logs', commandId),
+    list: (projectId: number) => ipcRenderer.invoke(IpcChannel.CommandsList, projectId),
+    create: (draft: CommandDraft) => ipcRenderer.invoke(IpcChannel.CommandsCreate, draft),
+    update: (commandId: number, draft: CommandDraft) => ipcRenderer.invoke(IpcChannel.CommandsUpdate, commandId, draft),
+    remove: (commandId: number) => ipcRenderer.invoke(IpcChannel.CommandsRemove, commandId),
+    start: (commandId: number) => ipcRenderer.invoke(IpcChannel.CommandsStart, commandId),
+    stop: (commandId: number) => ipcRenderer.invoke(IpcChannel.CommandsStop, commandId),
+    statuses: (projectId: number) => ipcRenderer.invoke(IpcChannel.CommandsStatuses, projectId),
+    logs: (commandId: number) => ipcRenderer.invoke(IpcChannel.CommandsLogs, commandId),
     onLog: (listener) => {
       const handler = (_event: Electron.IpcRendererEvent, payload: { commandId: number; chunk: string }): void => listener(payload)
-      ipcRenderer.on('commands:log', handler)
-      return () => ipcRenderer.removeListener('commands:log', handler)
+      ipcRenderer.on(IpcChannel.CommandsLogEvent, handler)
+      return () => ipcRenderer.removeListener(IpcChannel.CommandsLogEvent, handler)
     }
   },
   tasks: {
-    list: (projectId?: number | null) => ipcRenderer.invoke('tasks:list', projectId),
-    create: (draft: TaskDraft) => ipcRenderer.invoke('tasks:create', draft),
-    update: (taskId: number, draft: Partial<TaskDraft>) => ipcRenderer.invoke('tasks:update', taskId, draft),
-    remove: (taskId: number) => ipcRenderer.invoke('tasks:remove', taskId),
-    notes: (taskId: number) => ipcRenderer.invoke('tasks:notes:list', taskId),
-    addNote: (taskId: number, content: string) => ipcRenderer.invoke('tasks:notes:create', taskId, content),
-    removeNote: (noteId: number) => ipcRenderer.invoke('tasks:notes:remove', noteId),
-    checklist: (taskId: number) => ipcRenderer.invoke('tasks:checklist:list', taskId),
-    addChecklistItem: (taskId: number, title: string) => ipcRenderer.invoke('tasks:checklist:create', taskId, title),
-    toggleChecklistItem: (itemId: number, done: boolean) => ipcRenderer.invoke('tasks:checklist:toggle', itemId, done),
-    removeChecklistItem: (itemId: number) => ipcRenderer.invoke('tasks:checklist:remove', itemId),
-    completedBetween: (startIso: string, endIso: string) => ipcRenderer.invoke('tasks:completed-between', startIso, endIso)
+    list: (projectId?: number | null) => ipcRenderer.invoke(IpcChannel.TasksList, projectId),
+    create: (draft: TaskDraft) => ipcRenderer.invoke(IpcChannel.TasksCreate, draft),
+    update: (taskId: number, draft: Partial<TaskDraft>) => ipcRenderer.invoke(IpcChannel.TasksUpdate, taskId, draft),
+    remove: (taskId: number) => ipcRenderer.invoke(IpcChannel.TasksRemove, taskId),
+    notes: (taskId: number) => ipcRenderer.invoke(IpcChannel.TaskNotesList, taskId),
+    addNote: (taskId: number, content: string) => ipcRenderer.invoke(IpcChannel.TaskNotesCreate, taskId, content),
+    removeNote: (noteId: number) => ipcRenderer.invoke(IpcChannel.TaskNotesRemove, noteId),
+    checklist: (taskId: number) => ipcRenderer.invoke(IpcChannel.TaskChecklistList, taskId),
+    addChecklistItem: (taskId: number, title: string) => ipcRenderer.invoke(IpcChannel.TaskChecklistCreate, taskId, title),
+    toggleChecklistItem: (itemId: number, done: boolean) => ipcRenderer.invoke(IpcChannel.TaskChecklistToggle, itemId, done),
+    removeChecklistItem: (itemId: number) => ipcRenderer.invoke(IpcChannel.TaskChecklistRemove, itemId),
+    completedBetween: (startIso: string, endIso: string) => ipcRenderer.invoke(IpcChannel.TasksCompletedBetween, startIso, endIso)
   },
   reports: {
-    get: (reportDate: string) => ipcRenderer.invoke('reports:get', reportDate),
-    save: (reportDate: string, content: string) => ipcRenderer.invoke('reports:save', reportDate, content),
-    dates: () => ipcRenderer.invoke('reports:dates')
+    get: (reportDate: string) => ipcRenderer.invoke(IpcChannel.ReportsGet, reportDate),
+    save: (reportDate: string, content: string) => ipcRenderer.invoke(IpcChannel.ReportsSave, reportDate, content),
+    dates: () => ipcRenderer.invoke(IpcChannel.ReportsDates)
   },
   prompts: {
-    list: () => ipcRenderer.invoke('prompts:list'),
-    create: (draft: PromptDraft) => ipcRenderer.invoke('prompts:create', draft),
-    update: (promptId: number, draft: PromptDraft) => ipcRenderer.invoke('prompts:update', promptId, draft),
-    remove: (promptId: number) => ipcRenderer.invoke('prompts:remove', promptId),
-    importFiles: () => ipcRenderer.invoke('prompts:import-files')
+    list: () => ipcRenderer.invoke(IpcChannel.PromptsList),
+    create: (draft: PromptDraft) => ipcRenderer.invoke(IpcChannel.PromptsCreate, draft),
+    update: (promptId: number, draft: PromptDraft) => ipcRenderer.invoke(IpcChannel.PromptsUpdate, promptId, draft),
+    remove: (promptId: number) => ipcRenderer.invoke(IpcChannel.PromptsRemove, promptId),
+    importFiles: () => ipcRenderer.invoke(IpcChannel.PromptsImportFiles)
   },
   skills: {
-    list: () => ipcRenderer.invoke('skills:list'),
-    open: (skillPath: string) => ipcRenderer.invoke('skills:open', skillPath)
+    list: () => ipcRenderer.invoke(IpcChannel.SkillsList),
+    open: (skillPath: string) => ipcRenderer.invoke(IpcChannel.SkillsOpen, skillPath)
   },
   app: {
-    info: () => ipcRenderer.invoke('app:info')
+    info: () => ipcRenderer.invoke(IpcChannel.AppInfo)
   }
 }
 

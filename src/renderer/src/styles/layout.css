@@ -1,0 +1,181 @@
+/* 布局骨架:整个工作台罩一层从顶部渗入的薄荷微光(canopy 意象),面板承载内容层级。 */
+.app-shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(1100px 460px at 62% -12%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 62%),
+    var(--bg);
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 22px 14px 16px;
+  background: color-mix(in srgb, var(--sidebar) 82%, transparent);
+  border-right: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 48px;
+  padding: 0 10px 20px;
+}
+
+.brand-mark,
+.project-mark {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  border-radius: 10px;
+}
+
+.brand strong,
+.brand span,
+.sidebar-footer strong,
+.sidebar-footer span {
+  display: block;
+}
+
+.brand strong {
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+
+.brand span,
+.sidebar-footer span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.main-nav {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.main-nav button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.main-nav button:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.main-nav button.active {
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.main-nav button.active::before {
+  position: absolute;
+  left: 0;
+  width: 2px;
+  height: 18px;
+  content: "";
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+  padding: 14px 10px 2px;
+  border-top: 1px solid var(--line);
+}
+
+.sidebar-footer strong {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.local-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.main-content {
+  min-width: 0;
+  height: 100%;
+  overflow: auto;
+}
+
+.page,
+.embedded-workspace {
+  width: min(1180px, 100%);
+  min-height: 100%;
+  padding: 34px 38px 56px;
+  margin: 0 auto;
+}
+
+.embedded-workspace {
+  min-height: auto;
+  padding: 32px 0 0;
+}
+
+.route-enter {
+  animation: route-enter 180ms ease-out both;
+}
+
+@keyframes route-enter {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.page-header,
+.workspace-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 26px;
+}
+
+.page-header h1,
+.project-heading h1 {
+  font-size: clamp(26px, 3vw, 34px);
+  line-height: 1.16;
+  letter-spacing: -0.035em;
+}
+
+.page-header p:not(.eyebrow),
+.workspace-heading p:not(.eyebrow) {
+  margin-top: 7px;
+  color: var(--text-secondary);
+}
+
+.eyebrow {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}

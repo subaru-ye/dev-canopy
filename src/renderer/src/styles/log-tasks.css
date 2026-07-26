@@ -1,0 +1,366 @@
+/* 日志面板固定为终端质感,不随主题切换。 */
+.log-panel {
+  position: fixed;
+  z-index: 40;
+  right: 20px;
+  bottom: 20px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(720px, calc(100vw - 264px));
+  height: min(440px, calc(100vh - 80px));
+  overflow: hidden;
+  background: #090b0a;
+  border: 1px solid #303a34;
+  border-radius: 13px;
+  box-shadow: var(--shadow);
+  animation: modal-in 160ms ease-out both;
+}
+
+.log-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 54px;
+  padding: 8px 12px 8px 16px;
+  background: #0d100f;
+  border-bottom: 1px solid #252d28;
+}
+
+.log-panel header span,
+.log-panel header strong {
+  display: block;
+}
+
+.log-panel header span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: #718077;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.log-panel header span::before {
+  width: 6px;
+  height: 6px;
+  content: "";
+  background: var(--accent);
+  border-radius: 50%;
+}
+
+.log-panel header strong {
+  color: #eef3ef;
+}
+
+.log-panel .icon-button {
+  border-color: #252d28;
+}
+
+.log-panel pre {
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  color: #c7d3cb;
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.modal.wide {
+  width: min(760px, 100%);
+}
+
+.modal-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.task-groups {
+  display: grid;
+  gap: 20px;
+}
+
+.task-group-head {
+  display: flex;
+  align-items: center;
+  padding: 0 2px 10px;
+}
+
+.task-group-head span,
+.task-group-head button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  padding: 0;
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 0;
+}
+
+.task-group-head button:hover {
+  color: var(--text);
+}
+
+.task-group-head em {
+  padding: 1px 7px;
+  font-style: normal;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.task-group-head svg {
+  transition: transform 140ms ease;
+}
+
+.task-group-head svg.collapsed {
+  transform: rotate(-90deg);
+}
+
+.task-open {
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+
+.task-open h3 {
+  transition: color 140ms ease;
+}
+
+.task-open:hover h3 {
+  color: var(--accent);
+}
+
+.progress-tag {
+  padding: 2px 7px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.task-detail {
+  display: grid;
+  gap: 20px;
+}
+
+.task-detail-status {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.task-detail-status .inline-select select {
+  width: auto;
+  min-width: 120px;
+}
+
+.task-detail-description {
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.task-detail-completion {
+  padding: 10px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 9px;
+}
+
+.detail-section {
+  display: grid;
+  gap: 12px;
+}
+
+.detail-section > header {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.detail-section > header svg {
+  color: var(--accent);
+}
+
+.detail-section > header em {
+  padding: 1px 7px;
+  font-style: normal;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.checklist {
+  display: grid;
+  gap: 2px;
+}
+
+.checklist-item {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 28px;
+  gap: 10px;
+  align-items: center;
+  min-height: 34px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  transition: background-color 140ms ease;
+}
+
+.checklist-item:hover {
+  background: var(--surface-hover);
+}
+
+.checklist-item span {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checklist-item.is-done span {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.task-check.small {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+}
+
+.checklist-item.is-done .task-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.checklist-add input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 6px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dashed var(--line-strong);
+  transition: border-color 140ms ease;
+}
+
+.checklist-add input:focus {
+  outline: 0;
+  border-bottom-color: var(--accent);
+}
+
+.checklist-add input::placeholder,
+.note-editor textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.ghost-mini {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  opacity: 0;
+  border-color: transparent;
+}
+
+.checklist-item:hover .ghost-mini,
+.note-item:hover .ghost-mini,
+.ghost-mini:focus-visible {
+  opacity: 1;
+}
+
+.note-editor {
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
+.note-editor textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  resize: vertical;
+  transition: border-color 140ms ease;
+}
+
+.note-editor textarea:focus {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.note-timeline {
+  display: grid;
+  gap: 16px;
+}
+
+.note-day {
+  display: grid;
+  gap: 4px;
+  padding-left: 14px;
+  border-left: 2px solid var(--line);
+}
+
+.note-day-label {
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.note-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 28px;
+  gap: 10px;
+  align-items: start;
+  padding: 4px 6px 4px 0;
+  border-radius: 8px;
+}
+
+.note-item:hover {
+  background: var(--surface-hover);
+}
+
+.note-item p {
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.note-time {
+  padding-top: 1px;
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.note-empty {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
