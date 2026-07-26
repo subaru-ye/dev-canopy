@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CalendarDays, Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { CalendarDays, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Task } from '../../../shared/types'
+import { ErrorBanner } from '../components/ErrorBanner'
 import { localDayUtcRange, reportDayLabel, shiftDate, timeLabel, todayLocal } from '../utils/dates'
 
 const saveStateLabels = {
@@ -157,12 +158,7 @@ export function ReportsPage() {
         </span>
       </div>
 
-      {error ? (
-        <div className="error-banner" role="alert">
-          {error}
-          <button type="button" onClick={() => setError('')} aria-label="关闭错误"><X size={15} /></button>
-        </div>
-      ) : null}
+      <ErrorBanner message={error} onClose={() => setError('')} />
 
       <div className="report-layout">
         <div className="report-main">

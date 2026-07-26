@@ -3,6 +3,8 @@ import { Check, ChevronDown, ClipboardList, Edit3, Plus, Trash2 } from 'lucide-r
 import type { Project, Task, TaskDraft, TaskPriority, TaskStatus } from '../../../shared/types'
 import { Modal } from '../components/Modal'
 import { TaskDetailModal } from '../components/TaskDetailModal'
+import { useEditDialog } from '../hooks/useEditDialog'
+import { priorityLabels, statusLabels } from '../utils/taskLabels'
 
 interface TasksPageProps {
   projects: Project[]
@@ -18,29 +20,13 @@ const emptyDraft: TaskDraft = {
   completionNote: ''
 }
 
-const statusLabels: Record<TaskStatus, string> = {
-  todo: '待处理',
-  doing: '进行中',
-  done: '已完成'
-}
-
-const priorityLabels: Record<TaskPriority, string> = {
-  low: '低优先级',
-  normal: '普通',
-  high: '高优先级'
-}
-
 export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [scope, setScope] = useState<string>(fixedProjectId ? String(fixedProjectId) : 'all')
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<Task | null>(null)
-  const [draft, setDraft] = useState<TaskDraft>({ ...emptyDraft, projectId: fixedProjectId ?? null })
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
   const [detailTask, setDetailTask] = useState<Task | null>(null)
   const [showDone, setShowDone] = useState(false)
   const returnToDetailRef = useRef<Task | null>(null)
+  const dialog = useEditDialog<Task, TaskDraft>({ ...emptyDraft, projectId: fixedProjectId ?? null })
 
   const load = useCallback(async () => {
     const projectFilter = fixedProjectId ?? (scope === 'all' ? undefined : scope === 'personal' ? null : Number(scope))
@@ -61,15 +47,11 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
   ]), [tasks])
 
   const openCreate = (): void => {
-    setEditing(null)
-    setDraft({ ...emptyDraft, projectId: fixedProjectId ?? null })
-    setError('')
-    setDialogOpen(true)
+    dialog.openCreate({ ...emptyDraft, projectId: fixedProjectId ?? null })
   }
 
   const openEdit = (task: Task): void => {
-    setEditing(task)
-    setDraft({
+    dialog.openEdit(task, {
       projectId: task.projectId,
       title: task.title,
       description: task.description,
@@ -77,8 +59,6 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
       priority: task.priority,
       completionNote: task.completionNote
     })
-    setError('')
-    setDialogOpen(true)
   }
 
   const openEditFromDetail = (task: Task): void => {
@@ -88,37 +68,26 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
   }
 
   const closeEditDialog = (): void => {
-    setDialogOpen(false)
+    dialog.close()
     const back = returnToDetailRef.current
     returnToDetailRef.current = null
     if (back) setDetailTask(back)
   }
 
-  const saveTask = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault()
-    if (!draft.title.trim()) {
-      setError('请输入任务标题。')
-      return
-    }
-    setBusy(true)
-    setError('')
-    try {
-      if (editing) {
-        const updated = await window.devcanopy.tasks.update(editing.id, draft)
+  const saveTask = (event: FormEvent<HTMLFormElement>): void => {
+    void dialog.submit(event, async () => {
+      if (!dialog.draft.title.trim()) throw new Error('请输入任务标题。')
+      if (dialog.editing) {
+        const updated = await window.devcanopy.tasks.update(dialog.editing.id, dialog.draft)
         if (returnToDetailRef.current) {
           returnToDetailRef.current = null
           setDetailTask(updated)
         }
       } else {
-        await window.devcanopy.tasks.create(draft)
+        await window.devcanopy.tasks.create(dialog.draft)
       }
-      setDialogOpen(false)
       await load()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setBusy(false)
-    }
+    })
   }
 
   const setStatus = async (task: Task, status: TaskStatus): Promise<void> => {
@@ -228,27 +197,27 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
       </div>
 
       <Modal
-        open={dialogOpen}
-        title={editing ? '编辑任务' : '新建任务'}
+        open={dialog.open}
+        title={dialog.editing ? '编辑任务' : '新建任务'}
         description="个人待办与项目需求使用同一套任务记录。"
-        submitLabel={editing ? '保存修改' : '创建任务'}
-        busy={busy}
+        submitLabel={dialog.editing ? '保存修改' : '创建任务'}
+        busy={dialog.busy}
         onClose={closeEditDialog}
-        onSubmit={(event) => void saveTask(event)}
+        onSubmit={saveTask}
       >
         <div className="form-grid">
           <label className="field span-2">
             <span>标题</span>
-            <input autoFocus value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+            <input autoFocus value={dialog.draft.title} onChange={(event) => dialog.setDraft({ ...dialog.draft, title: event.target.value })} />
           </label>
           <label className="field span-2">
             <span>描述</span>
-            <textarea rows={3} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
+            <textarea rows={3} value={dialog.draft.description} onChange={(event) => dialog.setDraft({ ...dialog.draft, description: event.target.value })} />
           </label>
           {!fixedProjectId ? (
             <label className="field">
               <span>归属</span>
-              <select value={draft.projectId ?? ''} onChange={(event) => setDraft({ ...draft, projectId: event.target.value ? Number(event.target.value) : null })}>
+              <select value={dialog.draft.projectId ?? ''} onChange={(event) => dialog.setDraft({ ...dialog.draft, projectId: event.target.value ? Number(event.target.value) : null })}>
                 <option value="">个人待办</option>
                 {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
               </select>
@@ -256,21 +225,21 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
           ) : null}
           <label className="field">
             <span>优先级</span>
-            <select value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value as TaskPriority })}>
+            <select value={dialog.draft.priority} onChange={(event) => dialog.setDraft({ ...dialog.draft, priority: event.target.value as TaskPriority })}>
               {Object.entries(priorityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
           <label className="field">
             <span>状态</span>
-            <select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as TaskStatus })}>
+            <select value={dialog.draft.status} onChange={(event) => dialog.setDraft({ ...dialog.draft, status: event.target.value as TaskStatus })}>
               {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
           <label className="field span-2">
             <span>完成说明</span>
-            <textarea rows={2} value={draft.completionNote} onChange={(event) => setDraft({ ...draft, completionNote: event.target.value })} placeholder="完成后记录处理结果或关键决定" />
+            <textarea rows={2} value={dialog.draft.completionNote} onChange={(event) => dialog.setDraft({ ...dialog.draft, completionNote: event.target.value })} placeholder="完成后记录处理结果或关键决定" />
           </label>
-          {error ? <p className="form-error span-2" role="alert">{error}</p> : null}
+          {dialog.error ? <p className="form-error span-2" role="alert">{dialog.error}</p> : null}
         </div>
       </Modal>
 

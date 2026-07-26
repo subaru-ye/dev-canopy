@@ -2,19 +2,8 @@ import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Check, ListChecks, NotebookPen, Pencil, Trash2 } from 'lucide-react'
 import type { Task, TaskChecklistItem, TaskNote, TaskStatus } from '../../../shared/types'
 import { dayLabel, timeLabel } from '../utils/dates'
+import { priorityLabels, statusLabels } from '../utils/taskLabels'
 import { Modal } from './Modal'
-
-const statusLabels: Record<TaskStatus, string> = {
-  todo: '待处理',
-  doing: '进行中',
-  done: '已完成'
-}
-
-const priorityLabels: Record<Task['priority'], string> = {
-  low: '低优先级',
-  normal: '普通',
-  high: '高优先级'
-}
 
 interface TaskDetailModalProps {
   task: Task

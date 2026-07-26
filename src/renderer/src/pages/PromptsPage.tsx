@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Check, Copy, Edit3, FileText, FileUp, Plus, Search, Trash2, X } from 'lucide-react'
 import type { PromptDoc, PromptDraft } from '../../../shared/types'
+import { ErrorBanner } from '../components/ErrorBanner'
 import { Modal } from '../components/Modal'
+import { useEditDialog } from '../hooks/useEditDialog'
 import { dayLabel, timeLabel } from '../utils/dates'
 
 const emptyDraft: PromptDraft = { title: '', content: '' }
@@ -10,16 +12,12 @@ export function PromptsPage() {
   const [prompts, setPrompts] = useState<PromptDoc[]>([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<PromptDoc | null>(null)
-  const [draft, setDraft] = useState<PromptDraft>(emptyDraft)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
   const [pageError, setPageError] = useState('')
   const [copiedKey, setCopiedKey] = useState<number | 'modal' | null>(null)
   const [importNotice, setImportNotice] = useState('')
   const [importHasFailures, setImportHasFailures] = useState(false)
   const copyTimerRef = useRef<number | null>(null)
+  const dialog = useEditDialog<PromptDoc, PromptDraft>(emptyDraft)
 
   const load = useCallback(async () => {
     setPrompts(await window.devcanopy.prompts.list())
@@ -52,38 +50,17 @@ export function PromptsPage() {
       .catch(() => setPageError('复制失败，请重试。'))
   }
 
-  const openCreate = (): void => {
-    setEditing(null)
-    setDraft(emptyDraft)
-    setError('')
-    setDialogOpen(true)
-  }
-
   const openEdit = (prompt: PromptDoc): void => {
-    setEditing(prompt)
-    setDraft({ title: prompt.title, content: prompt.content })
-    setError('')
-    setDialogOpen(true)
+    dialog.openEdit(prompt, { title: prompt.title, content: prompt.content })
   }
 
-  const savePrompt = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault()
-    if (!draft.title.trim()) {
-      setError('请输入标题。')
-      return
-    }
-    setBusy(true)
-    setError('')
-    try {
-      if (editing) await window.devcanopy.prompts.update(editing.id, draft)
-      else await window.devcanopy.prompts.create(draft)
-      setDialogOpen(false)
+  const savePrompt = (event: FormEvent<HTMLFormElement>): void => {
+    void dialog.submit(event, async () => {
+      if (!dialog.draft.title.trim()) throw new Error('请输入标题。')
+      if (dialog.editing) await window.devcanopy.prompts.update(dialog.editing.id, dialog.draft)
+      else await window.devcanopy.prompts.create(dialog.draft)
       await load()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setBusy(false)
-    }
+    })
   }
 
   const removePrompt = async (prompt: PromptDoc): Promise<void> => {
@@ -125,7 +102,7 @@ export function PromptsPage() {
           <button className="button secondary" type="button" onClick={() => void handleImport()}>
             <FileUp size={16} /> 导入 .md
           </button>
-          <button className="button primary" type="button" onClick={openCreate}>
+          <button className="button primary" type="button" onClick={() => dialog.openCreate(emptyDraft)}>
             <Plus size={17} /> 新建记忆
           </button>
         </div>
@@ -139,12 +116,7 @@ export function PromptsPage() {
         </label>
       </div>
 
-      {pageError ? (
-        <div className="error-banner" role="alert">
-          {pageError}
-          <button type="button" onClick={() => setPageError('')} aria-label="关闭错误"><X size={15} /></button>
-        </div>
-      ) : null}
+      <ErrorBanner message={pageError} onClose={() => setPageError('')} />
 
       {importNotice ? (
         <p className={`import-notice ${importHasFailures ? 'has-failures' : ''}`} role="status">
@@ -162,7 +134,7 @@ export function PromptsPage() {
             <p>把打磨好的 prompt 和常用内容存进来，或直接导入已有的 .md 文件。</p>
             <div className="header-actions">
               <button className="button secondary" type="button" onClick={() => void handleImport()}>导入 .md</button>
-              <button className="button secondary" type="button" onClick={openCreate}>新建第一篇</button>
+              <button className="button secondary" type="button" onClick={() => dialog.openCreate(emptyDraft)}>新建第一篇</button>
             </div>
           </div>
         ) : null}
@@ -198,40 +170,40 @@ export function PromptsPage() {
       </div>
 
       <Modal
-        open={dialogOpen}
+        open={dialog.open}
         wide
-        title={editing ? '编辑记忆' : '新建记忆'}
+        title={dialog.editing ? '编辑记忆' : '新建记忆'}
         description="纯文本保存，随时复制给任何 AI 工具。"
-        submitLabel={editing ? '保存修改' : '创建记忆'}
-        busy={busy}
+        submitLabel={dialog.editing ? '保存修改' : '创建记忆'}
+        busy={dialog.busy}
         headerActions={(
           <button
             className={`button ghost ${copiedKey === 'modal' ? 'is-copied' : ''}`}
             type="button"
-            disabled={!draft.content}
-            onClick={() => copyText(draft.content, 'modal')}
+            disabled={!dialog.draft.content}
+            onClick={() => copyText(dialog.draft.content, 'modal')}
           >
             {copiedKey === 'modal' ? <><Check size={15} /> 已复制</> : <><Copy size={15} /> 复制全文</>}
           </button>
         )}
-        onClose={() => setDialogOpen(false)}
-        onSubmit={(event) => void savePrompt(event)}
+        onClose={dialog.close}
+        onSubmit={savePrompt}
       >
         <div className="form-grid">
           <label className="field span-2">
             <span>标题</span>
-            <input autoFocus value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+            <input autoFocus value={dialog.draft.title} onChange={(event) => dialog.setDraft({ ...dialog.draft, title: event.target.value })} />
           </label>
           <label className="field span-2">
             <span>正文</span>
             <textarea
               className="prompt-editor"
-              value={draft.content}
-              onChange={(event) => setDraft({ ...draft, content: event.target.value })}
+              value={dialog.draft.content}
+              onChange={(event) => dialog.setDraft({ ...dialog.draft, content: event.target.value })}
               placeholder="粘贴或撰写 prompt 正文…"
             />
           </label>
-          {error ? <p className="form-error span-2" role="alert">{error}</p> : null}
+          {dialog.error ? <p className="form-error span-2" role="alert">{dialog.error}</p> : null}
         </div>
       </Modal>
     </section>
