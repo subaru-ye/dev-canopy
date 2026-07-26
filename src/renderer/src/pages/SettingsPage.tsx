@@ -1,13 +1,31 @@
 import { useEffect, useState } from 'react'
-import { Database, FolderCog, FolderOpen, HardDriveDownload, Info, MonitorCog } from 'lucide-react'
-import type { AppInfo } from '../../../shared/types'
+import { Database, FolderCog, FolderOpen, HardDriveDownload, Info, MonitorCog, Moon, Sun, SunMoon } from 'lucide-react'
+import type { AppInfo, ThemePreference } from '../../../shared/types'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { loadThemePreference, saveThemePreference } from '../theme'
+
+const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; icon: typeof Sun }> = [
+  { value: 'system', label: '跟随系统', icon: SunMoon },
+  { value: 'light', label: '浅色', icon: Sun },
+  { value: 'dark', label: '深色', icon: Moon }
+]
 
 export function SettingsPage() {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [error, setError] = useState('')
   const [backupNotice, setBackupNotice] = useState('')
+  const [theme, setTheme] = useState<ThemePreference | null>(null)
   useEffect(() => { void window.devcanopy.app.info().then(setInfo) }, [])
+  useEffect(() => { void loadThemePreference().then(setTheme) }, [])
+
+  const handleTheme = async (preference: ThemePreference) => {
+    setTheme(preference)
+    try {
+      await saveThemePreference(preference)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    }
+  }
 
   const handleBackup = async () => {
     setBackupNotice('备份中…')
@@ -39,6 +57,28 @@ export function SettingsPage() {
       </header>
       <ErrorBanner message={error} onClose={() => setError('')} />
       <div className="settings-list">
+        <div className="setting-row">
+          <SunMoon size={19} />
+          <div><h2>界面主题</h2><p>跟随系统时随系统深浅色自动切换。</p></div>
+          <div className="theme-switch" role="radiogroup" aria-label="界面主题">
+            {THEME_OPTIONS.map((option) => {
+              const Icon = option.icon
+              return (
+                <button
+                  type="button"
+                  key={option.value}
+                  role="radio"
+                  aria-checked={theme === option.value}
+                  className={theme === option.value ? 'active' : ''}
+                  disabled={theme === null}
+                  onClick={() => void handleTheme(option.value)}
+                >
+                  <Icon size={15} />{option.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
         <div className="setting-row">
           <Database size={19} />
           <div><h2>SQLite 数据库</h2><p>项目、命令和任务保存在本机。</p></div>

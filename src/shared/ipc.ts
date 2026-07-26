@@ -39,6 +39,8 @@ export const IpcChannel = {
   SkillsOpen: 'skills:open',
   BackupCreate: 'backup:create',
   BackupOpenDir: 'backup:open-dir',
+  SettingsGet: 'settings:get',
+  SettingsSet: 'settings:set',
   AppInfo: 'app:info'
 } as const
 

@@ -327,6 +327,16 @@ function registerIpc(): void {
     if (error) throw new Error(error)
   })
 
+  ipcMain.handle(IpcChannel.SettingsGet, (_event, key: string) => {
+    if (typeof key !== 'string' || !key.trim()) throw new Error('设置键不能为空。')
+    return database.getSetting(key)
+  })
+  ipcMain.handle(IpcChannel.SettingsSet, (_event, key: string, value: string) => {
+    if (typeof key !== 'string' || !key.trim()) throw new Error('设置键不能为空。')
+    if (typeof value !== 'string') throw new Error('设置值必须是字符串。')
+    database.setSetting(key, value)
+  })
+
   ipcMain.handle(IpcChannel.AppInfo, () => ({
     version: app.getVersion(),
     databasePath,

@@ -1,4 +1,5 @@
 export type TaskStatus = 'todo' | 'doing' | 'done'
+export type ThemePreference = 'system' | 'light' | 'dark'
 export type TaskPriority = 'low' | 'normal' | 'high'
 export type DetectionType = 'none' | 'port' | 'health' | 'process'
 export type RuntimeState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error' | 'unknown'
@@ -204,6 +205,10 @@ export interface DevCanopyApi {
   backup: {
     create: () => Promise<string | null>
     openDir: () => Promise<void>
+  }
+  settings: {
+    get: (key: string) => Promise<string | null>
+    set: (key: string, value: string) => Promise<void>
   }
   app: {
     info: () => Promise<AppInfo>

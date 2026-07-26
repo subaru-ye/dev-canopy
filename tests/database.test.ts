@@ -3,6 +3,7 @@ import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import Database from 'better-sqlite3'
 import { AppDatabase } from '../src/main/database.ts'
 import { localDayUtcRange, shiftDate } from '../src/renderer/src/utils/dates.ts'
 
@@ -85,6 +86,44 @@ test('pruneProcessRuns 只裁保留期之外的记录', () => {
   assert.equal(db.pruneProcessRuns(30), 1)
   assert.equal(db.pruneProcessRuns(30), 0)
   db.close()
+})
+
+test('settings 键值表:get 未写返回 null,set 幂等覆盖', () => {
+  const db = openDb()
+  assert.equal(db.getSetting('theme'), null)
+  db.setSetting('theme', 'light')
+  assert.equal(db.getSetting('theme'), 'light')
+  db.setSetting('theme', 'dark')
+  assert.equal(db.getSetting('theme'), 'dark')
+  db.close()
+})
+
+test('迁移 1:仅有基线的老库升级后获得 settings 表且 user_version 递增', () => {
+  const dbPath = join(tmpdir(), `devcanopy-migrate-${process.pid}-${Math.floor(Math.random() * 1e9)}.db`)
+  try {
+    // 模拟只跑过迁移 0 的老库:建基线结构后把 user_version 拨回 1。
+    const seeded = new AppDatabase(dbPath)
+    seeded.createPrompt({ title: '升级前数据', content: 'v1' })
+    seeded.close()
+    const raw = new Database(dbPath)
+    raw.exec('DROP TABLE settings')
+    raw.pragma('user_version = 1')
+    raw.close()
+
+    const upgraded = new AppDatabase(dbPath)
+    upgraded.setSetting('theme', 'light')
+    assert.equal(upgraded.getSetting('theme'), 'light')
+    assert.equal(upgraded.listPrompts()[0]?.title, '升级前数据')
+    upgraded.close()
+
+    const check = new Database(dbPath, { readonly: true })
+    assert.equal(check.pragma('user_version', { simple: true }), 2)
+    check.close()
+  } finally {
+    for (const suffix of ['', '-wal', '-shm']) {
+      try { rmSync(dbPath + suffix) } catch { /* 忽略 */ }
+    }
+  }
 })
 
 test('版本化迁移:老库二次打开不重复执行且数据保留', () => {

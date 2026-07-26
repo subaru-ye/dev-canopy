@@ -98,7 +98,7 @@ export class AppDatabase {
   // 迁移 0 是幂等基线(全部 IF NOT EXISTS);之后的结构变更(如 ALTER TABLE 加列)必须
   // 作为新数组项追加,禁止改动已发布的条目。
   private migrate(): void {
-    const migrations = [this.baselineSchema()]
+    const migrations = [this.baselineSchema(), this.settingsSchema()]
     const applyMigrations = this.db.transaction(() => {
       let version = this.db.pragma('user_version', { simple: true }) as number
       while (version < migrations.length) {
@@ -194,6 +194,29 @@ export class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_task_checklist_task ON task_checklist(task_id);
       CREATE INDEX IF NOT EXISTS idx_prompts_updated ON prompts(updated_at);
     `
+  }
+
+  // 迁移 1:settings 键值表,主题/托盘/模板等配置的公共基建。
+  private settingsSchema(): string {
+    return `
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `
+  }
+
+  getSetting(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?')
+      .get(key) as { value: string } | undefined
+    return row?.value ?? null
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db.prepare(`
+      INSERT INTO settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(key, value)
   }
 
   listProjects(): Project[] {

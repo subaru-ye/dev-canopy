@@ -59,6 +59,10 @@ const api: DevCanopyApi = {
     create: () => ipcRenderer.invoke(IpcChannel.BackupCreate),
     openDir: () => ipcRenderer.invoke(IpcChannel.BackupOpenDir)
   },
+  settings: {
+    get: (key: string) => ipcRenderer.invoke(IpcChannel.SettingsGet, key),
+    set: (key: string, value: string) => ipcRenderer.invoke(IpcChannel.SettingsSet, key, value)
+  },
   app: {
     info: () => ipcRenderer.invoke(IpcChannel.AppInfo)
   }

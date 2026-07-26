@@ -36,10 +36,8 @@
   cursor: pointer;
 }
 
-@media (prefers-color-scheme: light) {
-  .report-date-input::-webkit-calendar-picker-indicator {
-    filter: none;
-  }
+:root[data-theme='light'] .report-date-input::-webkit-calendar-picker-indicator {
+  filter: none;
 }
 
 .report-layout {

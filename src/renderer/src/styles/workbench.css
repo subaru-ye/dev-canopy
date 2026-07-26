@@ -405,6 +405,41 @@
   white-space: nowrap;
 }
 
+.theme-switch {
+  display: inline-flex;
+  gap: 3px;
+  justify-self: end;
+  padding: 3px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+.theme-switch button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 13px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.theme-switch button:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.theme-switch button.active {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
 .setting-actions {
   display: flex;
   gap: 8px;

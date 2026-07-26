@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Brain, CheckSquare2, FolderKanban, NotebookPen, Settings, Sparkles, TerminalSquare } from 'lucide-react'
 import type { Project } from '../../shared/types'
+import { loadThemePreference } from './theme'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { PromptsPage } from './pages/PromptsPage'
 import { ReportsPage } from './pages/ReportsPage'
@@ -33,6 +34,9 @@ export function App() {
   }, [])
 
   useEffect(() => { void reloadProjects() }, [reloadProjects])
+
+  // localStorage 镜像只管首帧防闪烁,settings 表才是权威值:任何路由启动都要校准一次。
+  useEffect(() => { void loadThemePreference().catch(() => undefined) }, [])
 
   // 回写 hash,刷新/崩溃重载后停留在当前页面(initialRoute 会读取它)。
   useEffect(() => {
