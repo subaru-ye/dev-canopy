@@ -18,6 +18,13 @@ import type { CommandDraft, ProjectDraft, PromptDraft, PromptImportResult, TaskD
 const CLOSE_TO_TRAY_SETTING = 'closeToTray'
 const LAUNCH_AT_LOGIN_SETTING = 'launchAtLogin'
 
+// e2e 测试通过环境变量隔离 userData/appData,让数据库/设置/备份/日志都落临时目录,
+// 且阻止旧 DevDesk 库被自动迁移进来。必须在 app ready 前调用。
+if (process.env.DEVCANOPY_E2E_USER_DATA) {
+  app.setPath('userData', process.env.DEVCANOPY_E2E_USER_DATA)
+  app.setPath('appData', process.env.DEVCANOPY_E2E_USER_DATA)
+}
+
 let database: AppDatabase
 let processManager: ProcessManager
 let mainWindow: BrowserWindow | null = null
