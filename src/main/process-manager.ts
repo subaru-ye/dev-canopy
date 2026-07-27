@@ -25,12 +25,35 @@ export class ProcessManager {
   private processSnapshotCache: { takenAt: number; processes: ProcessSnapshot[] } | null = null
   private disposed = false
 
+  // 托管进程增减时的回调(托盘菜单据此重建),由 main 入口在构造后挂上。
+  onManagedChange: (() => void) | null = null
+
   constructor(
     private readonly database: AppDatabase,
     private readonly emitLog: (commandId: number, chunk: string) => void,
     private readonly probe: SystemProbe = systemProbe,
     private readonly logsDir: string | null = null
   ) {}
+
+  // 回调里是托盘菜单重建等外围逻辑,不能让它的异常打断进程状态维护。
+  private notifyManagedChange(): void {
+    try {
+      this.onManagedChange?.()
+    } catch {
+      // 忽略。
+    }
+  }
+
+  // 当前存活的托管进程清单,供托盘菜单展示「运行中命令」。
+  listManaged(): Array<{ commandId: number; pid: number | null; startedAt: string }> {
+    return [...this.managed.entries()]
+      .filter(([, entry]) => entry.child.exitCode === null && !entry.child.killed)
+      .map(([commandId, entry]) => ({
+        commandId,
+        pid: entry.child.pid ?? null,
+        startedAt: entry.startedAt
+      }))
+  }
 
   // 日志落盘失败(磁盘满/权限)只退化为内存日志,不阻断启动;
   // 流上的写入错误也必须吞掉,否则会抛成主进程未捕获异常。
@@ -77,6 +100,7 @@ export class ProcessManager {
     const runId = this.database.createProcessRun(command.id, child.pid ?? 0, startedAt)
     const logStream = this.openRunLog(command.id, runId)
     this.managed.set(command.id, { child, startedAt, runId, logStream })
+    this.notifyManagedChange()
 
     const append = (data: Buffer): void => {
       const chunk = data.toString('utf8')
@@ -97,11 +121,15 @@ export class ProcessManager {
         this.managed.delete(command.id)
         this.finishRunSafely(runId, null)
         logStream?.end()
+        this.notifyManagedChange()
       }
     })
     child.on('exit', (code) => {
       this.finishRunSafely(runId, code)
-      if (this.managed.get(command.id)?.child === child) this.managed.delete(command.id)
+      if (this.managed.get(command.id)?.child === child) {
+        this.managed.delete(command.id)
+        this.notifyManagedChange()
+      }
       if (code !== 0 && code !== null) this.lastErrors.set(command.id, `进程退出码：${code}`)
       if (!this.disposed) this.emitLog(command.id, `\n[DevCanopy] 进程已退出，退出码 ${code ?? 'unknown'}。\n`)
     })
@@ -121,6 +149,7 @@ export class ProcessManager {
     if (!runtime.pid) return runtime
     await this.killTree(runtime.pid)
     this.managed.delete(command.id)
+    this.notifyManagedChange()
     return {
       commandId: command.id,
       state: 'stopped',
@@ -143,6 +172,7 @@ export class ProcessManager {
     const entry = this.managed.get(commandId)
     if (entry) {
       this.managed.delete(commandId)
+      this.notifyManagedChange()
       this.finishRunSafely(entry.runId, null)
       entry.logStream?.end()
       if (entry.child.pid) await this.killTree(entry.child.pid).catch(() => undefined)

@@ -1,19 +1,28 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { spawn } from 'node:child_process'
 import { existsSync, promises as fs } from 'node:fs'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
+import trayIconPath from '../../resources/icon.png?asset'
 import { runStartupBackup } from './backup'
 import { AppDatabase, copyDatabase } from './database'
 import { ProcessManager } from './process-manager'
 import { cleanupRunLogs, runLogPath } from './run-logs'
 import { scanSkills } from './skills'
 import { systemProbe } from './system-probe'
+import { setupTray, type TrayController } from './tray'
+import { runTraySmoke } from './tray-smoke'
 import { IpcChannel } from '../shared/ipc'
 import type { CommandDraft, ProjectDraft, PromptDraft, PromptImportResult, TaskDraft, TaskPriority, TaskStatus } from '../shared/types'
+
+// 与 SettingsPage.tsx 的开关约定一致:'1' 开启,其余(含未写)视为关闭。
+const CLOSE_TO_TRAY_SETTING = 'closeToTray'
+const LAUNCH_AT_LOGIN_SETTING = 'launchAtLogin'
 
 let database: AppDatabase
 let processManager: ProcessManager
 let mainWindow: BrowserWindow | null = null
+let tray: TrayController | null = null
+let isQuitting = false
 let databasePath = ''
 let backupsDir = ''
 let logsDir = ''
@@ -38,6 +47,14 @@ function createWindow(): void {
   })
 
   mainWindow.once('ready-to-show', () => mainWindow?.show())
+  // 「关闭最小化到托盘」开启时拦下 close 只隐藏窗口;真正退出(isQuitting)不拦,
+  // 否则 before-quit 清理链会被这里挡住导致退不出去。
+  mainWindow.on('close', (event) => {
+    if (isQuitting) return
+    if (database.getSetting(CLOSE_TO_TRAY_SETTING) !== '1') return
+    event.preventDefault()
+    mainWindow?.hide()
+  })
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -101,6 +118,21 @@ function createWindow(): void {
       app.quit()
     }, 1_500)
   })
+  // 托盘冒烟后门(仅开发态):关窗驻留 → 托盘停止 → 托盘退出,验证进程清理链闭环。
+  const traySmokeId = !app.isPackaged ? Number(process.env.DEVCANOPY_TRAY_SMOKE ?? NaN) : NaN
+  if (Number.isInteger(traySmokeId)) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(() => {
+        void runTraySmoke({
+          commandId: traySmokeId,
+          database,
+          processManager,
+          getWindow: () => mainWindow,
+          getTray: () => tray
+        }).catch((error) => console.error('[tray-smoke] 冒烟流程异常', error))
+      }, 1_500)
+    })
+  }
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // 只放行 http/https,防止 file:// 等协议经系统默认处理器执行本地程序。
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
@@ -113,6 +145,23 @@ function createWindow(): void {
   } else {
     void mainWindow.loadFile(join(__dirname, '../renderer/index.html'), captureRoute ? { hash: captureRoute } : undefined)
   }
+}
+
+// 托盘点击/菜单「显示主窗口」共用:窗口被销毁过(如托盘常驻期间)则重建。
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+// 开发态 execPath 是 electron.exe,写进自启注册表是坏项;仅打包产物真正落系统设置。
+function applyLaunchAtLogin(enabled: boolean): void {
+  if (!app.isPackaged) return
+  app.setLoginItemSettings({ openAtLogin: enabled })
 }
 
 function detectPackageManager(projectPath: string): 'npm' | 'pnpm' | 'yarn' | 'bun' {
@@ -418,6 +467,7 @@ function registerIpc(): void {
     if (typeof key !== 'string' || !key.trim()) throw new Error('设置键不能为空。')
     if (typeof value !== 'string') throw new Error('设置值必须是字符串。')
     database.setSetting(key, value)
+    if (key === LAUNCH_AT_LOGIN_SETTING) applyLaunchAtLogin(value === '1')
   })
 
   ipcMain.handle(IpcChannel.SearchQuery, (_event, query: string) => {
@@ -454,18 +504,44 @@ app.whenReady().then(async () => {
   registerIpc()
   createWindow()
 
+  tray = setupTray({
+    icon: nativeImage.createFromPath(trayIconPath),
+    showWindow: showMainWindow,
+    listRunning: () =>
+      processManager.listManaged().map((entry) => {
+        const command = database.getCommand(entry.commandId)
+        const project = command ? database.getProject(command.projectId) : null
+        return {
+          commandId: entry.commandId,
+          label: command && project ? `${project.name} · ${command.name}` : `命令 #${entry.commandId}`
+        }
+      }),
+    stopCommand: (commandId) => {
+      const command = database.getCommand(commandId)
+      const project = command ? database.getProject(command.projectId) : null
+      if (command && project) void processManager.stop(command, project).catch(() => undefined)
+    },
+    quit: () => app.quit()
+  })
+  processManager.onManagedChange = () => tray?.refresh()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform === 'darwin') return
+  // 托盘常驻开启时不随窗口退出:窗口即便被销毁,应用也留在托盘等待恢复。
+  if (database?.getSetting(CLOSE_TO_TRAY_SETTING) === '1') return
+  app.quit()
 })
 
 // 退出前先结算并终止托管进程(否则 dev server 变孤儿继续占端口),再关数据库。
 let cleanupDone = false
 app.on('before-quit', (event) => {
+  // 先立 isQuitting,否则「关闭最小化到托盘」的 close 拦截会把退出时的关窗也拦下。
+  isQuitting = true
   if (cleanupDone) return
   cleanupDone = true
   event.preventDefault()
@@ -476,6 +552,8 @@ app.on('before-quit', (event) => {
       // 尽力清理,失败也要继续退出。
     }
     database?.close()
+    tray?.destroy()
+    tray = null
     app.quit()
   })()
 })

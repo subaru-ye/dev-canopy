@@ -223,6 +223,27 @@ test('传入 logsDir 时输出落盘为 <commandId>/<runId>.log,close 后内容�
   }
 })
 
+test('listManaged 反映存活托管进程,增减时触发 onManagedChange', async () => {
+  const child = new FakeChild(321)
+  const { probe } = fakeProbe({ spawnCommand: () => asChild(child) })
+  const manager = new ProcessManager(fakeDatabase().db, () => {}, probe)
+  let changes = 0
+  manager.onManagedChange = () => { changes += 1 }
+  assert.deepEqual(manager.listManaged(), [])
+
+  await manager.start(makeCommand(), project)
+  const running = manager.listManaged()
+  assert.equal(running.length, 1)
+  assert.equal(running[0].commandId, 1)
+  assert.equal(running[0].pid, 321)
+  assert.equal(changes, 1)
+
+  child.exitCode = 0
+  child.emit('exit', 0)
+  assert.deepEqual(manager.listManaged(), [])
+  assert.equal(changes, 2)
+})
+
 test('端口检测经 probe 报告 detected 运行态', async () => {
   const { probe } = fakeProbe({
     isPortOpen: async () => true,

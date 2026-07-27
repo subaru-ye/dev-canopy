@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Database, FolderCog, FolderOpen, HardDriveDownload, Info, MonitorCog, Moon, Sun, SunMoon } from 'lucide-react'
+import { Database, FolderCog, FolderOpen, HardDriveDownload, Info, Minimize2, MonitorCog, Moon, Power, Sun, SunMoon } from 'lucide-react'
 import type { AppInfo, ThemePreference } from '../../../shared/types'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { loadThemePreference, saveThemePreference } from '../theme'
@@ -10,13 +10,52 @@ const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; icon: typeof
   { value: 'dark', label: '深色', icon: Moon }
 ]
 
+// 与主进程约定:'1' 开启,其余(含未写)视为关闭。
+const CLOSE_TO_TRAY_SETTING = 'closeToTray'
+const LAUNCH_AT_LOGIN_SETTING = 'launchAtLogin'
+
+function BoolSwitch(props: {
+  label: string
+  value: boolean | null
+  onLabel: string
+  offLabel: string
+  onChange: (next: boolean) => void
+}) {
+  return (
+    <div className="theme-switch" role="radiogroup" aria-label={props.label}>
+      {[
+        { flag: true, text: props.onLabel },
+        { flag: false, text: props.offLabel }
+      ].map((option) => (
+        <button
+          type="button"
+          key={option.text}
+          role="radio"
+          aria-checked={props.value === option.flag}
+          className={props.value === option.flag ? 'active' : ''}
+          disabled={props.value === null}
+          onClick={() => props.onChange(option.flag)}
+        >
+          {option.text}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function SettingsPage() {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [error, setError] = useState('')
   const [backupNotice, setBackupNotice] = useState('')
   const [theme, setTheme] = useState<ThemePreference | null>(null)
+  const [closeToTray, setCloseToTray] = useState<boolean | null>(null)
+  const [launchAtLogin, setLaunchAtLogin] = useState<boolean | null>(null)
   useEffect(() => { void window.devcanopy.app.info().then(setInfo) }, [])
   useEffect(() => { void loadThemePreference().then(setTheme) }, [])
+  useEffect(() => {
+    void window.devcanopy.settings.get(CLOSE_TO_TRAY_SETTING).then((value) => setCloseToTray(value === '1'))
+    void window.devcanopy.settings.get(LAUNCH_AT_LOGIN_SETTING).then((value) => setLaunchAtLogin(value === '1'))
+  }, [])
 
   const handleTheme = async (preference: ThemePreference) => {
     setTheme(preference)
@@ -25,6 +64,13 @@ export function SettingsPage() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     }
+  }
+
+  const handleBoolSetting = (key: string, setter: (next: boolean) => void) => (next: boolean) => {
+    setter(next)
+    window.devcanopy.settings.set(key, next ? '1' : '0').catch((reason) => {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    })
   }
 
   const handleBackup = async () => {
@@ -78,6 +124,28 @@ export function SettingsPage() {
               )
             })}
           </div>
+        </div>
+        <div className="setting-row">
+          <Minimize2 size={19} />
+          <div><h2>关闭窗口时</h2><p>最小化到托盘后命令继续运行，从托盘菜单可恢复窗口或退出。</p></div>
+          <BoolSwitch
+            label="关闭窗口时"
+            value={closeToTray}
+            onLabel="最小化到托盘"
+            offLabel="退出应用"
+            onChange={handleBoolSetting(CLOSE_TO_TRAY_SETTING, setCloseToTray)}
+          />
+        </div>
+        <div className="setting-row">
+          <Power size={19} />
+          <div><h2>开机自启动</h2><p>登录 Windows 后自动启动 DevCanopy（仅安装版生效）。</p></div>
+          <BoolSwitch
+            label="开机自启动"
+            value={launchAtLogin}
+            onLabel="开启"
+            offLabel="关闭"
+            onChange={handleBoolSetting(LAUNCH_AT_LOGIN_SETTING, setLaunchAtLogin)}
+          />
         </div>
         <div className="setting-row">
           <Database size={19} />
