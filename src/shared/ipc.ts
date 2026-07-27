@@ -47,7 +47,12 @@ export const IpcChannel = {
   SettingsGet: 'settings:get',
   SettingsSet: 'settings:set',
   SearchQuery: 'search:query',
-  AppInfo: 'app:info'
+  AppInfo: 'app:info',
+  WindowMinimize: 'window:minimize',
+  WindowToggleMaximize: 'window:toggle-maximize',
+  WindowClose: 'window:close',
+  WindowIsMaximized: 'window:is-maximized',
+  WindowMaximizeChange: 'window:maximize-change'
 } as const
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel]

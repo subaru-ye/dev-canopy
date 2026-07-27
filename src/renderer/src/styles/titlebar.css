@@ -1,0 +1,52 @@
+/* 无边框窗口自定义标题栏:与侧栏同背景,拖拽移动窗口,右侧三按钮。 */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 0 0 14px;
+  background: var(--sidebar);
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+  -webkit-app-region: drag;
+  grid-column: 1 / -1;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.titlebar-brand strong {
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+/* 按钮区域不拖拽,否则点击会被拖拽吞掉。 */
+.titlebar-controls {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 36px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  transition: background-color 100ms ease, color 100ms ease;
+}
+
+.titlebar-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.titlebar-btn.close:hover {
+  background: #e81123;
+  color: #fff;
+}

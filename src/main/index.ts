@@ -44,6 +44,7 @@ function createWindow(): void {
     minHeight: 680,
     title: 'DevCanopy',
     backgroundColor: '#101312',
+    frame: false,
     show: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
@@ -54,6 +55,14 @@ function createWindow(): void {
   })
 
   mainWindow.once('ready-to-show', () => mainWindow?.show())
+  // 无边框窗口:最大化/还原状态经 IPC 推给渲染层,让标题栏按钮图标切换。
+  const sendMaximizeChange = (maximized: boolean): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IpcChannel.WindowMaximizeChange, maximized)
+    }
+  }
+  mainWindow.on('maximize', () => sendMaximizeChange(true))
+  mainWindow.on('unmaximize', () => sendMaximizeChange(false))
   // 「关闭最小化到托盘」开启时拦下 close 只隐藏窗口;真正退出(isQuitting)不拦,
   // 否则 before-quit 清理链会被这里挡住导致退不出去。
   mainWindow.on('close', (event) => {
@@ -493,6 +502,21 @@ function registerIpc(): void {
     backupsDir,
     platform: process.platform
   }))
+
+  ipcMain.handle(IpcChannel.WindowMinimize, () => {
+    mainWindow?.minimize()
+  })
+  ipcMain.handle(IpcChannel.WindowToggleMaximize, () => {
+    if (!mainWindow) return
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
+  })
+  ipcMain.handle(IpcChannel.WindowClose, () => {
+    mainWindow?.close()
+  })
+  ipcMain.handle(IpcChannel.WindowIsMaximized, () => {
+    return mainWindow?.isMaximized() ?? false
+  })
 }
 
 app.whenReady().then(async () => {

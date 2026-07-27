@@ -1,6 +1,7 @@
 /* 样式按功能块拆分在 ./styles/ 下,此处仅声明聚合顺序 —— 级联依赖顺序,禁止调换。 */
 @import './styles/base.css'; /* 设计 token/重置/滚动条/焦点环 */
 @import './styles/layout.css'; /* 布局骨架:侧栏与页面 */
+@import './styles/titlebar.css'; /* 无边框窗口标题栏 */
 @import './styles/components.css'; /* 面板/按钮/工具栏/空态/项目卡片 */
 @import './styles/workbench.css'; /* 运行信号/命令表/任务行/skills/settings/弹窗与表单 */
 @import './styles/log-tasks.css'; /* 日志面板/任务分组与详情 */

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Brain, CheckSquare2, FolderKanban, NotebookPen, Settings, Sparkles, TerminalSquare } from 'lucide-react'
+import { Brain, CheckSquare2, FolderKanban, NotebookPen, Settings, Sparkles } from 'lucide-react'
 import type { Project, SearchResult, SearchResultKind } from '../../shared/types'
 import { CommandPalette } from './components/CommandPalette'
+import { TitleBar } from './components/TitleBar'
 import { NEW_ITEM_EVENT } from './hooks/useNewItemShortcut'
 import { setJumpIntent } from './jump'
 import { loadThemePreference } from './theme'
@@ -93,11 +94,8 @@ export function App() {
 
   return (
     <div className="app-shell">
+      <TitleBar />
       <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark"><TerminalSquare size={20} /></span>
-          <div><strong>DevCanopy</strong><span>Local workspace</span></div>
-        </div>
         <nav className="main-nav" aria-label="主菜单">
           {navigation.map((item) => {
             const Icon = item.icon

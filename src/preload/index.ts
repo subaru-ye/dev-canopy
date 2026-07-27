@@ -73,6 +73,17 @@ const api: DevCanopyApi = {
   },
   app: {
     info: () => ipcRenderer.invoke(IpcChannel.AppInfo)
+  },
+  window: {
+    minimize: () => ipcRenderer.invoke(IpcChannel.WindowMinimize),
+    toggleMaximize: () => ipcRenderer.invoke(IpcChannel.WindowToggleMaximize),
+    close: () => ipcRenderer.invoke(IpcChannel.WindowClose),
+    isMaximized: () => ipcRenderer.invoke(IpcChannel.WindowIsMaximized),
+    onMaximizeChange: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, maximized: boolean): void => listener(maximized)
+      ipcRenderer.on(IpcChannel.WindowMaximizeChange, handler)
+      return () => ipcRenderer.removeListener(IpcChannel.WindowMaximizeChange, handler)
+    }
   }
 }
 

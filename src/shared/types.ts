@@ -245,4 +245,11 @@ export interface DevCanopyApi {
   app: {
     info: () => Promise<AppInfo>
   }
+  window: {
+    minimize: () => Promise<void>
+    toggleMaximize: () => Promise<void>
+    close: () => Promise<void>
+    isMaximized: () => Promise<boolean>
+    onMaximizeChange: (listener: (maximized: boolean) => void) => () => void
+  }
 }
