@@ -150,6 +150,13 @@
   border-radius: 7px;
 }
 
+/* 明日到期任务:还没完成,用弱化底色区别于已完成的 accent 勾。 */
+.report-task-check.is-pending {
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+}
+
 .report-task-meta {
   display: flex;
   flex-wrap: wrap;

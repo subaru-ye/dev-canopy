@@ -25,6 +25,12 @@ function excerpt(text: string, query: string): string {
   return `${start > 0 ? '…' : ''}${clean.slice(start, index + query.length + 56)}`
 }
 
+function localToday(): string {
+  const now = new Date()
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
 // 用 SQLite 在线 backup 拷贝数据库(连同 WAL 中未落盘的写入),供旧路径迁移使用。
 export async function copyDatabase(sourcePath: string, destinationPath: string): Promise<void> {
   const source = new Database(sourcePath, { readonly: true, fileMustExist: true })
@@ -70,6 +76,7 @@ const TASK_SELECT = `
     t.description,
     t.status,
     t.priority,
+    t.due_date AS dueDate,
     t.completion_note AS completionNote,
     t.created_at AS createdAt,
     t.completed_at AS completedAt,
@@ -114,7 +121,7 @@ export class AppDatabase {
   // 迁移 0 是幂等基线(全部 IF NOT EXISTS);之后的结构变更(如 ALTER TABLE 加列)必须
   // 作为新数组项追加,禁止改动已发布的条目。
   private migrate(): void {
-    const migrations = [this.baselineSchema(), this.settingsSchema()]
+    const migrations = [this.baselineSchema(), this.settingsSchema(), this.taskDueDateSchema()]
     const applyMigrations = this.db.transaction(() => {
       let version = this.db.pragma('user_version', { simple: true }) as number
       while (version < migrations.length) {
@@ -219,6 +226,15 @@ export class AppDatabase {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+    `
+  }
+
+  // 迁移 2:任务截止日期(YYYY-MM-DD 本地日期,NULL 表示无截止)。
+  // 第一次对已发布表 ALTER 加列:老库升级走这里,新库按迁移序依次执行同样到位。
+  private taskDueDateSchema(): string {
+    return `
+      ALTER TABLE tasks ADD COLUMN due_date TEXT;
+      CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
     `
   }
 
@@ -406,7 +422,8 @@ export class AppDatabase {
     return rows.map((row) => row.id)
   }
 
-  listTasks(projectId?: number | null): Task[] {
+  // today 为本地日期(YYYY-MM-DD),默认取当前;测试传固定值。
+  listTasks(projectId?: number | null, today = localToday()): Task[] {
     let where = ''
     const params: unknown[] = []
     if (typeof projectId === 'number') {
@@ -415,14 +432,16 @@ export class AppDatabase {
     } else if (projectId === null) {
       where = 'WHERE t.project_id IS NULL'
     }
+    // 同状态分组内:逾期/今日到期的未完成任务前置,再按优先级与创建时间排。
     return this.db.prepare(`
       ${TASK_SELECT}
       ${where}
       ORDER BY
         CASE t.status WHEN 'doing' THEN 0 WHEN 'todo' THEN 1 ELSE 2 END,
+        CASE WHEN t.status != 'done' AND t.due_date IS NOT NULL AND t.due_date <= ? THEN 0 ELSE 1 END,
         CASE t.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
         t.created_at DESC
-    `).all(...params) as Task[]
+    `).all(...params, today) as Task[]
   }
 
   getTask(taskId: number): Task | null {
@@ -436,10 +455,10 @@ export class AppDatabase {
     const now = new Date().toISOString()
     const result = this.db.prepare(`
       INSERT INTO tasks (
-        project_id, title, description, status, priority,
+        project_id, title, description, status, priority, due_date,
         completion_note, created_at, completed_at
       ) VALUES (
-        @projectId, @title, @description, @status, @priority,
+        @projectId, @title, @description, @status, @priority, @dueDate,
         @completionNote, @createdAt, @completedAt
       )
     `).run({
@@ -464,6 +483,7 @@ export class AppDatabase {
       description: (patch.description ?? current.description).trim(),
       status: patch.status ?? current.status,
       priority: patch.priority ?? current.priority,
+      dueDate: patch.dueDate === undefined ? current.dueDate : patch.dueDate,
       completionNote: (patch.completionNote ?? current.completionNote).trim()
     }
     const completedAt = next.status === 'done'
@@ -476,6 +496,7 @@ export class AppDatabase {
         description = @description,
         status = @status,
         priority = @priority,
+        due_date = @dueDate,
         completion_note = @completionNote,
         completed_at = @completedAt
       WHERE id = @id

@@ -12,6 +12,7 @@ function makeTask(overrides: Partial<Task>): Task {
     description: '',
     status: 'done',
     priority: 'normal',
+    dueDate: null,
     completionNote: '',
     createdAt: '2026-07-20T00:00:00.000Z',
     completedAt: new Date(2026, 6, 22, 14, 5).toISOString(),

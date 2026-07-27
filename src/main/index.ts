@@ -370,12 +370,16 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.TasksList, (_event, projectId?: number | null) => database.listTasks(projectId))
   ipcMain.handle(IpcChannel.TasksCreate, (_event, draft: TaskDraft) => {
     if (!draft.title.trim()) throw new Error('任务标题不能为空。')
+    if (draft.dueDate !== null && !REPORT_DATE_PATTERN.test(draft.dueDate)) throw new Error('截止日期格式不正确。')
     return database.createTask(draft)
   })
   ipcMain.handle(IpcChannel.TasksUpdate, (_event, taskId: number, draft: Partial<TaskDraft>) => {
     if (draft.title !== undefined && !draft.title.trim()) throw new Error('任务标题不能为空。')
     if (draft.status !== undefined && !TASK_STATUSES.includes(draft.status)) throw new Error('任务状态无效。')
     if (draft.priority !== undefined && !TASK_PRIORITIES.includes(draft.priority)) throw new Error('任务优先级无效。')
+    if (draft.dueDate !== undefined && draft.dueDate !== null && !REPORT_DATE_PATTERN.test(draft.dueDate)) {
+      throw new Error('截止日期格式不正确。')
+    }
     return database.updateTask(taskId, draft)
   })
   ipcMain.handle(IpcChannel.TasksRemove, (_event, taskId: number) => database.removeTask(taskId))

@@ -29,7 +29,7 @@ test('runStartupBackup 产出可读备份并滚动清理最旧', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'devcanopy-backup-'))
   try {
     const db = new AppDatabase(join(dir, 'devcanopy.db'))
-    db.createTask({ projectId: null, title: '备份前的任务', description: '', status: 'todo', priority: 'normal', completionNote: '' })
+    db.createTask({ projectId: null, title: '备份前的任务', description: '', status: 'todo', priority: 'normal', dueDate: null, completionNote: '' })
 
     const backupsDir = join(dir, 'backups')
     // 预置 5 份旧备份,今天这份写入后最旧的一份应被清理。
@@ -62,7 +62,7 @@ test('runStartupBackup 同日重复执行覆盖当日备份而非报错', async 
     const db = new AppDatabase(join(dir, 'devcanopy.db'))
     const backupsDir = join(dir, 'backups')
     await runStartupBackup((destination) => db.backup(destination), backupsDir, '2026-07-26')
-    db.createTask({ projectId: null, title: '第二次启动前新增', description: '', status: 'todo', priority: 'normal', completionNote: '' })
+    db.createTask({ projectId: null, title: '第二次启动前新增', description: '', status: 'todo', priority: 'normal', dueDate: null, completionNote: '' })
     await runStartupBackup((destination) => db.backup(destination), backupsDir, '2026-07-26')
     db.close()
 

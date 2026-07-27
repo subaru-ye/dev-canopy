@@ -114,7 +114,7 @@ export function TaskDetailModal({ task, onClose, onEdit, onTaskChange, onMutated
       open
       wide
       title={task.title}
-      description={`${task.projectName ?? '个人待办'} · ${priorityLabels[task.priority]} · 创建于 ${dayLabel(task.createdAt)}`}
+      description={`${task.projectName ?? '个人待办'} · ${priorityLabels[task.priority]}${task.dueDate ? ` · 截止 ${task.dueDate}` : ''} · 创建于 ${dayLabel(task.createdAt)}`}
       headerActions={(
         <button className="icon-button" type="button" onClick={() => onEdit(task)} aria-label="编辑任务字段">
           <Pencil size={16} />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CalendarDays, Check, ChevronLeft, ChevronRight, ListPlus, ScrollText } from 'lucide-react'
+import { CalendarClock, CalendarDays, Check, ChevronLeft, ChevronRight, ListPlus, ScrollText } from 'lucide-react'
 import type { Task } from '../../../shared/types'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { clearJumpIntent, peekJumpIntent } from '../jump'
@@ -55,6 +55,7 @@ export function ReportsPage() {
   const [today, setToday] = useState<string>(todayLocal())
   const [draft, setDraft] = useState('')
   const [completedTasks, setCompletedTasks] = useState<Task[]>([])
+  const [dueTomorrowTasks, setDueTomorrowTasks] = useState<Task[]>([])
   const [reportDates, setReportDates] = useState<string[]>([])
   const [saveState, setSaveState] = useState<keyof typeof saveStateLabels>('idle')
   const [loading, setLoading] = useState(true)
@@ -98,11 +99,13 @@ export function ReportsPage() {
     dateRef.current = date
     setLoading(true)
     const range = localDayUtcRange(date)
+    const tomorrow = shiftDate(date, 1)
     Promise.all([
       window.devcanopy.reports.get(date),
-      window.devcanopy.tasks.completedBetween(range.startIso, range.endIso)
+      window.devcanopy.tasks.completedBetween(range.startIso, range.endIso),
+      window.devcanopy.tasks.list()
     ])
-      .then(([report, tasks]) => {
+      .then(([report, tasks, allTasks]) => {
         if (cancelled) return
         const content = report?.content ?? ''
         setDraft(content)
@@ -110,6 +113,8 @@ export function ReportsPage() {
         savedRef.current = content
         setSaveState('idle')
         setCompletedTasks(tasks)
+        // 写「明日计划」时的提醒:相对所看日期的次日到期、且尚未完成的任务。
+        setDueTomorrowTasks(allTasks.filter((task) => task.status !== 'done' && task.dueDate === tomorrow))
         setLoading(false)
       })
       .catch((reason) => {
@@ -292,6 +297,25 @@ export function ReportsPage() {
               </div>
             ))}
           </section>
+          {dueTomorrowTasks.length > 0 ? (
+            <section className="panel report-done">
+              <header className="report-panel-head">
+                <CalendarClock size={14} /> 明日到期任务 <em>{dueTomorrowTasks.length}</em>
+              </header>
+              {dueTomorrowTasks.map((task) => (
+                <div className="report-task-row" key={task.id}>
+                  <span className="report-task-check is-pending"><CalendarClock size={14} /></span>
+                  <div>
+                    <h3>{task.title}</h3>
+                    <div className="report-task-meta">
+                      <span>{task.projectName ?? '个人待办'}</span>
+                      <span>{task.dueDate} 到期</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </section>
+          ) : null}
         </div>
         <aside className="panel report-history">
           <header className="report-panel-head"><CalendarDays size={14} /> 写过的日报</header>

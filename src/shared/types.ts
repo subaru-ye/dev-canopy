@@ -83,6 +83,8 @@ export interface Task {
   description: string
   status: TaskStatus
   priority: TaskPriority
+  // 本地日期 YYYY-MM-DD,null 表示无截止。
+  dueDate: string | null
   completionNote: string
   createdAt: string
   completedAt: string | null
@@ -113,6 +115,7 @@ export interface TaskDraft {
   description: string
   status: TaskStatus
   priority: TaskPriority
+  dueDate: string | null
   completionNote: string
 }
 

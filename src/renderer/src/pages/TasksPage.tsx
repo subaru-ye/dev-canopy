@@ -6,6 +6,7 @@ import { TaskDetailModal } from '../components/TaskDetailModal'
 import { useEditDialog } from '../hooks/useEditDialog'
 import { useNewItemShortcut } from '../hooks/useNewItemShortcut'
 import { clearJumpIntent, peekJumpIntent } from '../jump'
+import { todayLocal } from '../utils/dates'
 import { priorityLabels, statusLabels } from '../utils/taskLabels'
 
 interface TasksPageProps {
@@ -19,7 +20,16 @@ const emptyDraft: TaskDraft = {
   description: '',
   status: 'todo',
   priority: 'normal',
+  dueDate: null,
   completionNote: ''
+}
+
+// 未完成任务的截止标记:逾期红标、今日到期 accent 标、未来到期弱化展示。
+function DueTag({ task, today }: { task: Task; today: string }) {
+  if (!task.dueDate || task.status === 'done') return null
+  if (task.dueDate < today) return <span className="due-tag overdue">逾期 {task.dueDate}</span>
+  if (task.dueDate === today) return <span className="due-tag due-today">今天到期</span>
+  return <span className="due-tag">{task.dueDate} 到期</span>
 }
 
 export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
@@ -72,6 +82,7 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
       description: task.description,
       status: task.status,
       priority: task.priority,
+      dueDate: task.dueDate,
       completionNote: task.completionNote
     })
   }
@@ -117,6 +128,8 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
     await load()
   }
 
+  const today = todayLocal()
+
   const renderTask = (task: Task) => (
     <article className={`task-row ${task.status === 'done' ? 'is-done' : ''}`} key={task.id}>
       <button
@@ -135,6 +148,7 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
         {task.description ? <p>{task.description}</p> : null}
         <div className="task-meta">
           <span>{task.projectName ?? '个人待办'}</span>
+          <DueTag task={task} today={today} />
           {task.checklistTotal > 0 ? <span className="progress-tag">{task.checklistDone}/{task.checklistTotal} 子任务</span> : null}
           {task.noteCount > 0 ? <span>{task.noteCount} 条记录</span> : null}
           {task.completionNote ? <span>完成说明：{task.completionNote}</span> : null}
@@ -249,6 +263,15 @@ export function TasksPage({ projects, fixedProjectId }: TasksPageProps) {
             <select value={dialog.draft.status} onChange={(event) => dialog.setDraft({ ...dialog.draft, status: event.target.value as TaskStatus })}>
               {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
+          </label>
+          <label className="field">
+            <span>截止日期</span>
+            <input
+              type="date"
+              className="report-date-input"
+              value={dialog.draft.dueDate ?? ''}
+              onChange={(event) => dialog.setDraft({ ...dialog.draft, dueDate: event.target.value || null })}
+            />
           </label>
           <label className="field span-2">
             <span>完成说明</span>
